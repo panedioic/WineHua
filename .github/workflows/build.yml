@@ -75,6 +75,32 @@ jobs:
           PY
           chmod +x sign.py
 
+      # ---- CI-only: build-profile.json5 (从 example 派生, 签名字段占位) ----
+      # 项目 .gitignore 忽略了 build-profile.json5 (含真实签名信息).
+      # 无签名构建流程有 sign.py stub 兜底, 这里只需要一份结构合法的 profile
+      # 让 hvigor 打包流程通过.
+      - name: Provision unsigned build-profile.json5
+        run: |
+          if [ ! -f build-profile.json5.example ]; then
+            echo "ERROR: build-profile.json5.example not found" >&2
+            exit 1
+          fi
+          cp build-profile.json5.example build-profile.json5
+          echo "[ci] build-profile.json5 provisioned from example (signing fields are placeholders)"
+
+      # ---- 兜底: 确保 libtool m4 宏 (ltdl.m4) 存在 ----
+      # buildenv 镜像里 apt Recommends 被禁, 未显式列出的 libltdl-dev 不装.
+      # 待 Dockerfile 修好后可以删除这一步.
+      - name: Ensure libtool m4 macros present
+        run: |
+          if [ ! -f /usr/share/aclocal/ltdl.m4 ]; then
+            echo "ltdl.m4 missing, installing libltdl-dev..."
+            apt-get update
+            apt-get install -y libltdl-dev
+          else
+            echo "ltdl.m4 present, no action needed"
+          fi
+
       - name: Show environment
         run: |
           echo "== toolchain =="
@@ -89,71 +115,6 @@ jobs:
           /apps/harmony/bin/hvigorw --version || true
           echo "== nproc =="
           nproc
-
-      # ==== 深度诊断: 镜像里到底装了什么 ====
-      - name: Deep diagnose libltdl-dev
-        run: |
-          echo "===== dpkg says: ====="
-          dpkg -l | grep -E 'libtool|libltdl' || true
-          echo
-          echo "===== files owned by libltdl-dev: ====="
-          dpkg -L libltdl-dev 2>&1 | head -30 || echo "(package not installed?)"
-          echo
-          echo "===== /usr/share/aclocal/ contents: ====="
-          ls -la /usr/share/aclocal/ | head -30
-          echo
-          echo "===== image digest (from container runtime): ====="
-          cat /etc/os-release | grep VERSION_CODENAME || true
-
-      # ==== 自愈: 如果 ltdl.m4 缺失, 现场装/重装 libltdl-dev ====
-      - name: Ensure libtool m4 macros present
-        run: |
-          if [ ! -f /usr/share/aclocal/ltdl.m4 ]; then
-            echo "ltdl.m4 missing, installing libltdl-dev..."
-            apt-get update
-            apt-get install --reinstall -y libltdl-dev
-            ls -la /usr/share/aclocal/ltdl.m4
-          else
-            echo "ltdl.m4 present, no action needed"
-          fi
-
-      - name: Diagnose autotools/aclocal environment
-        run: |
-          echo "===== container identity ====="
-          id
-          echo "HOME=$HOME"
-          echo "PWD=$PWD"
-          
-          echo "===== aclocal ====="
-          which aclocal
-          aclocal --version | head -1
-          echo "aclocal --print-ac-dir: $(aclocal --print-ac-dir)"
-          
-          echo "===== ACLOCAL_PATH ====="
-          echo "ACLOCAL_PATH=${ACLOCAL_PATH:-<unset>}"
-          
-          echo "===== system m4 files ====="
-          ls -la /usr/share/aclocal/ltdl.m4 /usr/share/aclocal/libtool.m4 2>&1
-          
-          echo "===== dirlist ====="
-          _acdir=$(aclocal --print-ac-dir)
-          if [ -f "$_acdir/dirlist" ]; then
-              echo "== $_acdir/dirlist =="
-              cat "$_acdir/dirlist"
-          else
-              echo "no dirlist file"
-          fi
-          
-          echo "===== aclocal --verbose (dry run on libffi) ====="
-          cd thirdparty/libffi
-          # 不实际生成, 只看它搜索路径
-          aclocal --verbose -I m4 --output=/tmp/test_acl.m4 2>&1 | head -40 || true
-          echo
-          echo "===== does /tmp/test_acl.m4 have LT_SYS_SYMBOL_USCORE? ====="
-          grep -c 'LT_SYS_SYMBOL_USCORE' /tmp/test_acl.m4 2>/dev/null || echo "NOT FOUND"
-          
-          echo "===== env dump (aclocal/autotools related) ====="
-          env | grep -iE 'ACLOCAL|AUTOMAKE|AUTOCONF|LIBTOOL|M4' || echo "(none)"
 
       - name: Build HAP
         env:
