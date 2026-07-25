@@ -75,18 +75,56 @@ jobs:
           PY
           chmod +x sign.py
 
-      # ---- CI-only: build-profile.json5 (从 example 派生, 签名字段占位) ----
-      # 项目 .gitignore 忽略了 build-profile.json5 (含真实签名信息).
-      # 无签名构建流程有 sign.py stub 兜底, 这里只需要一份结构合法的 profile
-      # 让 hvigor 打包流程通过.
+      # ---- CI-only: 无签名的 build-profile.json5 ----
+      # 从 example 派生会踩坑: example 里的 signingConfigs 指向占位符路径,
+      # hvigor 的 SignHap 任务会校验这些文件存在, 直接失败.
+      # 这里显式写一份 signingConfigs 为空的 profile, 让 hvigor 跳过 SignHap,
+      # 直接输出 entry-default-unsigned.hap.
       - name: Provision unsigned build-profile.json5
         run: |
-          if [ ! -f build-profile.json5.example ]; then
-            echo "ERROR: build-profile.json5.example not found" >&2
-            exit 1
-          fi
-          cp build-profile.json5.example build-profile.json5
-          echo "[ci] build-profile.json5 provisioned from example (signing fields are placeholders)"
+          cat > build-profile.json5 <<'JSON5'
+          {
+            "app": {
+              "signingConfigs": [],
+              "products": [
+                {
+                  "name": "default",
+                  "targetSdkVersion": "6.1.0(23)",
+                  "compatibleSdkVersion": "6.1.0(23)",
+                  "runtimeOS": "HarmonyOS",
+                  "buildOption": {
+                    "nativeCompiler": "BiSheng",
+                    "strictMode": {
+                      "caseSensitiveCheck": true,
+                      "useNormalizedOHMUrl": true
+                    }
+                  }
+                }
+              ],
+              "buildModeSet": [
+                {
+                  "name": "debug"
+                },
+                {
+                  "name": "release"
+                }
+              ]
+            },
+            "modules": [
+              {
+                "name": "entry",
+                "srcPath": "./entry",
+                "targets": [
+                  {
+                    "name": "default",
+                    "applyToProducts": ["default"]
+                  }
+                ]
+              }
+            ]
+          }
+          JSON5
+          echo "[ci] wrote unsigned build-profile.json5 (signingConfigs empty)"
 
       # ---- 兜底: 确保 libtool m4 宏 (ltdl.m4) 存在 ----
       # buildenv 镜像里 apt Recommends 被禁, 未显式列出的 libltdl-dev 不装.
