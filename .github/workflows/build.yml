@@ -90,6 +90,44 @@ jobs:
           echo "== nproc =="
           nproc
 
+      - name: Diagnose autotools/aclocal environment
+        run: |
+          echo "===== container identity ====="
+          id
+          echo "HOME=$HOME"
+          echo "PWD=$PWD"
+          
+          echo "===== aclocal ====="
+          which aclocal
+          aclocal --version | head -1
+          echo "aclocal --print-ac-dir: $(aclocal --print-ac-dir)"
+          
+          echo "===== ACLOCAL_PATH ====="
+          echo "ACLOCAL_PATH=${ACLOCAL_PATH:-<unset>}"
+          
+          echo "===== system m4 files ====="
+          ls -la /usr/share/aclocal/ltdl.m4 /usr/share/aclocal/libtool.m4 2>&1
+          
+          echo "===== dirlist ====="
+          _acdir=$(aclocal --print-ac-dir)
+          if [ -f "$_acdir/dirlist" ]; then
+              echo "== $_acdir/dirlist =="
+              cat "$_acdir/dirlist"
+          else
+              echo "no dirlist file"
+          fi
+          
+          echo "===== aclocal --verbose (dry run on libffi) ====="
+          cd thirdparty/libffi
+          # 不实际生成, 只看它搜索路径
+          aclocal --verbose -I m4 --output=/tmp/test_acl.m4 2>&1 | head -40 || true
+          echo
+          echo "===== does /tmp/test_acl.m4 have LT_SYS_SYMBOL_USCORE? ====="
+          grep -c 'LT_SYS_SYMBOL_USCORE' /tmp/test_acl.m4 2>/dev/null || echo "NOT FOUND"
+          
+          echo "===== env dump (aclocal/autotools related) ====="
+          env | grep -iE 'ACLOCAL|AUTOMAKE|AUTOCONF|LIBTOOL|M4' || echo "(none)"
+
       - name: Build HAP
         env:
           NATIVE_ARCH: arm64-v8a
