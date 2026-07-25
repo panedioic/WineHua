@@ -4,6 +4,8 @@ name: Build HAP (arm64-v8a, unsigned)
 on:
   push:
     branches: [master]
+    tags:
+      - 'v*'                    # v0.1.0, v1.2.3-rc1 等, 推 tag 会额外触发 release job
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -12,12 +14,17 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (留空则只构建不发布)'
+        required: false
+        type: string
 
 # GITHUB_TOKEN 权限:
-#   contents: read  — 拉源码
+#   contents: write — 拉源码 + 发布 Release (需要 write)
 #   packages: read  — 拉 GHCR 私有 buildenv 镜像
 permissions:
-  contents: read
+  contents: write
   packages: read
 
 jobs:
@@ -195,3 +202,81 @@ jobs:
             build/**/config.log
           if-no-files-found: ignore
           retention-days: 7
+
+  # ============================================================
+  # Release job: 仅在推 tag 或手动指定 release_tag 时运行
+  # ============================================================
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-26.04
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release_tag != ''
+
+    steps:
+      - name: Checkout (for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 需要历史 commit 生成 changelog
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            tag="${{ github.event.inputs.release_tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: $tag"
+
+      - name: Download HAP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: WineHua-arm64-v8a-unsigned-${{ github.sha }}
+          path: ./release-assets
+
+      - name: Rename artifact with version
+        run: |
+          set -eux
+          cd release-assets
+          for f in *.hap; do
+            mv "$f" "WineHua-${{ steps.tag.outputs.tag }}-arm64-v8a-unsigned.hap"
+          done
+          ls -lh
+
+      - name: Generate changelog
+        run: |
+          # 找到上一个 tag (若存在)
+          prev_tag=$(git describe --tags --abbrev=0 "${{ steps.tag.outputs.tag }}^" 2>/dev/null || echo "")
+          if [ -n "$prev_tag" ]; then
+            {
+              echo "## Changes since \`$prev_tag\`"
+              echo
+              git log --pretty=format:'- %s (%h)' "$prev_tag..${{ steps.tag.outputs.tag }}"
+            } > changelog.md
+          else
+            echo "## Initial release" > changelog.md
+          fi
+          {
+            echo
+            echo
+            echo "---"
+            echo
+            echo "**Note**: This build is **unsigned**. To install on a HarmonyOS device you'll need developer mode enabled, or sign the HAP with your own certificate first."
+            echo
+            echo "Built from commit \`${GITHUB_SHA:0:7}\`."
+          } >> changelog.md
+          echo "---- changelog.md ----"
+          cat changelog.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: WineHua ${{ steps.tag.outputs.tag }}
+          body_path: changelog.md
+          files: release-assets/*.hap
+          draft: false
+          # -rc / -beta / -alpha 后缀自动标记为 pre-release
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-rc') || contains(steps.tag.outputs.tag, '-beta') || contains(steps.tag.outputs.tag, '-alpha') }}
+          fail_on_unmatched_files: true
