@@ -26,6 +26,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
+    # 容器里默认 shell 是 sh, 不认 `set -o pipefail` 等 bash 语法
+    # 这里强制所有 run step 用 bash
+    defaults:
+      run:
+        shell: bash
+
     container:
       image: ghcr.io/panedioic/winehua-buildenv:test
       credentials:
