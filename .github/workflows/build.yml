@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 180
 
     container:
-      image: ghcr.io/panedioic/winehua-buildenv:20260723
+      image: ghcr.io/panedioic/winehua-buildenv:test
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
