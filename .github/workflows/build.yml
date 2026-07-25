@@ -23,7 +23,7 @@ permissions:
 jobs:
   build:
     name: make NATIVE_ARCH=arm64-v8a hap
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
 
     # 容器里默认 shell 是 sh, 不认 `set -o pipefail` 等 bash 语法
