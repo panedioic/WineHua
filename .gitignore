@@ -52,3 +52,7 @@ thirdparty/freetype-VER-2-13-3/
 entry/src/main/resources/rawfile/wine-data.zip
 tmp/
 prebuilt/
+
+# Command Line Tools
+
+/harmony-sdk/

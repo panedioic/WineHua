@@ -1,0 +1,19 @@
+# 只有 harmony-sdk/ 需要进 build context, 其他一律排除
+
+# 排除所有, 再显式放行需要的
+*
+!harmony-sdk/
+!harmony-sdk/**
+
+# 双保险: 明确排除本地构建产物 (即使上面的规则失效也不会漏)
+.git
+.hvigor
+build
+entry/build
+entry/libs
+entry/oh_modules
+oh_modules
+node_modules
+thirdparty
+.claude
+docs
