@@ -90,6 +90,33 @@ jobs:
           echo "== nproc =="
           nproc
 
+      # ==== 深度诊断: 镜像里到底装了什么 ====
+      - name: Deep diagnose libltdl-dev
+        run: |
+          echo "===== dpkg says: ====="
+          dpkg -l | grep -E 'libtool|libltdl' || true
+          echo
+          echo "===== files owned by libltdl-dev: ====="
+          dpkg -L libltdl-dev 2>&1 | head -30 || echo "(package not installed?)"
+          echo
+          echo "===== /usr/share/aclocal/ contents: ====="
+          ls -la /usr/share/aclocal/ | head -30
+          echo
+          echo "===== image digest (from container runtime): ====="
+          cat /etc/os-release | grep VERSION_CODENAME || true
+
+      # ==== 自愈: 如果 ltdl.m4 缺失, 现场装/重装 libltdl-dev ====
+      - name: Ensure libtool m4 macros present
+        run: |
+          if [ ! -f /usr/share/aclocal/ltdl.m4 ]; then
+            echo "ltdl.m4 missing, installing libltdl-dev..."
+            apt-get update
+            apt-get install --reinstall -y libltdl-dev
+            ls -la /usr/share/aclocal/ltdl.m4
+          else
+            echo "ltdl.m4 present, no action needed"
+          fi
+
       - name: Diagnose autotools/aclocal environment
         run: |
           echo "===== container identity ====="
