@@ -5,8 +5,8 @@
 # 用法 (本地一次性构建, 需先把 HarmonyOS SDK 放到 ./harmony-sdk/):
 #   docker build -f ci/Dockerfile.buildenv \
 #       --build-arg SDK_SRC=./harmony-sdk \
-#       -t ghcr.io/winehua/winehua-buildenv:20260723 .
-#   docker push ghcr.io/winehua/winehua-buildenv:20260723
+#       -t ghcr.io/panedioic/winehua-buildenv:test .
+#   docker push ghcr.io/panedioic/winehua-buildenv:test
 #
 # 目录约定 (与 scripts/env.sh 默认值一致):
 #   /apps/harmony/                          # TOOL_HOME
@@ -20,13 +20,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# ---- 系统依赖 (对齐 docs/BUILD_ENV.md) ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# ---- 系统依赖 (严格对齐本地开发 Dockerfile) ----
+RUN apt-get update && apt-get install -y \
         build-essential cmake ninja-build meson \
         bison flex autoconf automake libtool \
-        pkgconf zip unzip xz-utils curl ca-certificates \
-        git file python3 python3-pip \
-        libexpat1-dev libxml2-dev libffi-dev libfreetype-dev \
+        pkgconf zip git file python3 python3-pip \
+        libexpat1-dev libxml2-dev libffi-dev \
+        libfreetype-dev \
         gcc-mingw-w64-i686 g++-mingw-w64-i686 \
         gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
         default-jdk \
