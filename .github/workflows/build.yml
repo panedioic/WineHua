@@ -256,6 +256,47 @@ jobs:
           set -euxo pipefail
           make NATIVE_ARCH=arm64-v8a hap
 
+      # 保证所有 cache path 至少存在, 避免 post-hook 抱怨 Path Validation Error
+      # (cache 保存时若路径不存在会直接跳过, 即便前面 build 成功)
+      - name: Normalize cache paths for post-hook
+        if: always()
+        run: |
+          set +e
+          # 目录: 不存在就建空的; 存在就不动
+          for d in \
+              build/sysroot-ext \
+              build/wine-native \
+              build/wine-ohos \
+              build/wine_server \
+              build/box64_build; do
+            mkdir -p "$d"
+          done
+          # stamp 文件: 不存在就创建
+          mkdir -p build/.stamps
+          for s in \
+              build/.stamps/deps \
+              build/.stamps/wine-arm64-v8a \
+              build/.stamps/box64-arm64-v8a; do
+            [ -f "$s" ] || date -u +%FT%TZ > "$s"
+          done
+          echo "== cache paths after normalize =="
+          for p in \
+              build/sysroot-ext \
+              build/wine-native \
+              build/wine-ohos \
+              build/wine_server \
+              build/box64_build \
+              build/.stamps/deps \
+              build/.stamps/wine-arm64-v8a \
+              build/.stamps/box64-arm64-v8a; do
+            if [ -e "$p" ]; then
+              printf "OK       %s\n" "$p"
+            else
+              printf "MISSING  %s\n" "$p"
+            fi
+          done
+          exit 0
+
       # 诊断: 确认 cache 路径实际是否存在
       - name: Diagnose cache paths
         if: always()
