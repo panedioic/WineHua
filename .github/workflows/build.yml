@@ -45,10 +45,10 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    env:
+      NATIVE_ARCH: arm64-v8a
+
     steps:
-      # ---- 让私有 submodule 走 HTTPS + GITHUB_TOKEN ----
-      # 前提: wine/box64/mesa-ohos 三个私有 submodule 与本仓库在同一账号/组织下
-      # 若跨组织, 需替换成有跨仓库权限的 PAT (存到 secrets.SUBMODULE_PAT)
       - name: Configure git for private submodules
         run: |
           git config --global --add safe.directory '*'
@@ -153,6 +153,65 @@ jobs:
             echo "CI build dependencies already present"
           fi
 
+      # ============================================================
+      # 缓存: 按 submodule sha 拉起大依赖的中间产物
+      # 命中时可省去 deps / wine / box64 三个阶段的编译时间
+      # ============================================================
+      - name: Get submodule shas
+        id: shas
+        run: |
+          wine_sha=$(git -C thirdparty/wine rev-parse HEAD)
+          box64_sha=$(git -C thirdparty/box64 rev-parse HEAD)
+          echo "wine=$wine_sha" >> "$GITHUB_OUTPUT"
+          echo "box64=$box64_sha" >> "$GITHUB_OUTPUT"
+          echo "Wine sha: $wine_sha"
+          echo "Box64 sha: $box64_sha"
+
+      - name: Cache deps (sysroot-ext)
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/sysroot-ext
+            build/.stamps/deps
+          key: deps-v1-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
+
+      - name: Cache Wine build
+        id: cache-wine
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/wine-native
+            build/wine-ohos
+            build/wine_server
+            build/.stamps/wine-arm64-v8a
+          key: wine-v1-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
+
+      - name: Cache Box64 build
+        id: cache-box64
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/box64_build
+            build/.stamps/box64-arm64-v8a
+          key: box64-v1-${{ steps.shas.outputs.box64 }}-${{ hashFiles('scripts/build_box64.sh') }}
+
+      - name: Report cache hits
+        run: |
+          echo "deps  cache-hit: ${{ steps.cache-deps.outputs.cache-hit }}"
+          echo "wine  cache-hit: ${{ steps.cache-wine.outputs.cache-hit }}"
+          echo "box64 cache-hit: ${{ steps.cache-box64.outputs.cache-hit }}"
+
+      # cache 恢复文件的 mtime 有时会用当前时间, 导致 Makefile 的
+      # find -newer 误判 stamp 过期; 显式 touch 一下让 stamp 最新
+      - name: Refresh stamp mtimes on cache hit
+        run: |
+          if [ -d build/.stamps ]; then
+            find build/.stamps -type f -exec touch {} +
+            echo "stamps after refresh:"
+            ls -la build/.stamps/ build/.stamps/*/ 2>/dev/null || true
+          fi
+
       - name: Show environment
         run: |
           echo "== toolchain =="
@@ -171,8 +230,6 @@ jobs:
           echo "== nproc =="
           nproc
 
-      # 先单独构建运行时组件再打 HAP: 运行时构建失败与打包失败分开上报.
-      # 顶层 Makefile 在非 CI 构建中同样以该产物作为 assemble 前置依赖.
       - name: Build guest graphics runtime (x64 + x86)
         run: |
           set -euxo pipefail
@@ -192,7 +249,6 @@ jobs:
 
       - name: Build HAP
         env:
-          NATIVE_ARCH: arm64-v8a
           BUILD_GUEST_GFX: '1'
           BUILD_GUEST_VULKAN: '1'
           BUILD_WINE_MONO: '1'
