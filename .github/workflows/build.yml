@@ -256,30 +256,47 @@ jobs:
           set -euxo pipefail
           make NATIVE_ARCH=arm64-v8a hap
 
-      # 保证所有 cache path 至少存在, 避免 post-hook 抱怨 Path Validation Error
-      # (cache 保存时若路径不存在会直接跳过, 即便前面 build 成功)
-      - name: Normalize cache paths for post-hook
+      # 深度诊断: 看清楚 build/ 下真实产出
+      - name: Diagnose build tree
         if: always()
         run: |
           set +e
-          # 目录: 不存在就建空的; 存在就不动
-          for d in \
-              build/sysroot-ext \
-              build/wine-native \
-              build/wine-ohos \
-              build/wine_server \
-              build/box64_build; do
-            mkdir -p "$d"
-          done
-          # stamp 文件: 不存在就创建
-          mkdir -p build/.stamps
-          for s in \
-              build/.stamps/deps \
-              build/.stamps/wine-arm64-v8a \
-              build/.stamps/box64-arm64-v8a; do
-            [ -f "$s" ] || date -u +%FT%TZ > "$s"
-          done
-          echo "== cache paths after normalize =="
+          echo "== ls -la build/ =="
+          ls -la build/ 2>&1 | head -30
+          echo
+          echo "== du -sh build/*  =="
+          du -sh build/* 2>&1 | sort -k1 -h | tail -30
+          echo
+          echo "== find build/.stamps -type f =="
+          find build/.stamps -type f 2>&1
+          echo
+          echo "== 查找可能的 wine 输出目录 =="
+          find build -maxdepth 2 -type d -name '*wine*' 2>&1
+          echo
+          echo "== 查找 sysroot =="
+          find build -maxdepth 2 -type d -name '*sysroot*' 2>&1
+          echo
+          echo "== 查找 box64 相关 =="
+          find build -maxdepth 3 -name 'box64*' 2>&1 | head -20
+          exit 0
+
+      - name: Diagnose build tree (for cache path check)
+        if: always()
+        run: |
+          set +e
+          echo "== ls -la build/ =="
+          ls -la build/ 2>&1 | head -40
+          echo
+          echo "== du -sh build/*  (large-first) =="
+          du -sh build/* 2>&1 | sort -k1 -h | tail -30
+          echo
+          echo "== 查找 wine/sysroot/box64 =="
+          find build -maxdepth 2 -type d 2>&1 | sort
+          echo
+          echo "== stamps =="
+          find build/.stamps -type f 2>&1 | sort
+          echo
+          echo "== cache path 实际存在性 =="
           for p in \
               build/sysroot-ext \
               build/wine-native \
@@ -290,9 +307,10 @@ jobs:
               build/.stamps/wine-arm64-v8a \
               build/.stamps/box64-arm64-v8a; do
             if [ -e "$p" ]; then
-              printf "OK       %s\n" "$p"
+              size=$(du -sh "$p" 2>/dev/null | cut -f1)
+              printf "OK       %-40s  %s\n" "$p" "$size"
             else
-              printf "MISSING  %s\n" "$p"
+              printf "MISSING  %-40s\n" "$p"
             fi
           done
           exit 0
