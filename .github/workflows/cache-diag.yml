@@ -1,0 +1,149 @@
+# .github/workflows/cache-diag.yml
+# 独立诊断: 验证 actions/cache 在这个 container job 里能否正常工作
+# 只跑 deps + box64, 不跑 wine/dxvk/hap
+name: Cache Diag (box64 only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/panedioic/winehua-buildenv:test
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    env:
+      NATIVE_ARCH: arm64-v8a
+
+    steps:
+      - name: Configure git for private submodules
+        run: |
+          git config --global --add safe.directory '*'
+          git config --global \
+            url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf \
+            "git@github.com:"
+          git config --global --add \
+            url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf \
+            "https://github.com/"
+
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure CI build dependencies present
+        run: |
+          packages=()
+          if [ ! -f /usr/share/aclocal/ltdl.m4 ]; then
+            packages+=(libltdl-dev)
+          fi
+          if [ "${#packages[@]}" -gt 0 ]; then
+            apt-get update
+            apt-get install -y --no-install-recommends "${packages[@]}"
+          fi
+
+      - name: Get box64 sha
+        id: shas
+        run: |
+          box64_sha=$(git -C thirdparty/box64 rev-parse HEAD)
+          echo "box64=$box64_sha" >> "$GITHUB_OUTPUT"
+          echo "Box64 sha: $box64_sha"
+
+      # === 关键: 用绝对路径 ===
+      - name: Cache Box64 build (absolute path)
+        id: cache-box64
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/build/box64_build
+            ${{ github.workspace }}/build/.stamps/box64-arm64-v8a
+          key: box64-diag-v1-${{ steps.shas.outputs.box64 }}-${{ hashFiles('scripts/build_box64.sh') }}
+
+      - name: Report cache-hit and env
+        run: |
+          echo "cache-hit: ${{ steps.cache-box64.outputs.cache-hit }}"
+          echo "PWD:       $(pwd)"
+          echo "WORKSPACE: ${GITHUB_WORKSPACE}"
+          echo "HOME:      ${HOME}"
+          echo
+          echo "== 检查 cache path (绝对) =="
+          for p in \
+              "${GITHUB_WORKSPACE}/build/box64_build" \
+              "${GITHUB_WORKSPACE}/build/.stamps/box64-arm64-v8a"; do
+            if [ -e "$p" ]; then
+              echo "EXISTS  $p"
+              ls -la "$p" 2>&1 | head -5
+            else
+              echo "MISSING $p"
+            fi
+          done
+
+      - name: Build box64 (if not cached)
+        if: steps.cache-box64.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          # 只跑 box64 目标, 不跑其他
+          make NATIVE_ARCH=arm64-v8a box64
+
+      - name: Post-build diagnosis
+        run: |
+          set +e
+          echo "== 关键路径产出情况 =="
+          echo "-- absolute paths --"
+          for p in \
+              "${GITHUB_WORKSPACE}/build/box64_build" \
+              "${GITHUB_WORKSPACE}/build/.stamps/box64-arm64-v8a"; do
+            if [ -e "$p" ]; then
+              printf "OK       %s\n" "$p"
+              if [ -d "$p" ]; then
+                echo "  size: $(du -sh "$p" 2>/dev/null | cut -f1)"
+                echo "  entries: $(ls "$p" 2>/dev/null | wc -l)"
+              fi
+            else
+              printf "MISSING  %s\n" "$p"
+            fi
+          done
+          echo
+          echo "-- relative paths from PWD --"
+          for p in \
+              "build/box64_build" \
+              "build/.stamps/box64-arm64-v8a"; do
+            if [ -e "$p" ]; then
+              printf "OK       ./%s\n" "$p"
+            else
+              printf "MISSING  ./%s\n" "$p"
+            fi
+          done
+          echo
+          echo "-- ls -la build/ --"
+          ls -la build/ 2>&1 | head -20
+          echo
+          echo "-- ls -la build/.stamps/ --"
+          ls -la build/.stamps/ 2>&1 | head -20
+
+      - name: Sentinel file (guarantee cache path exists)
+        if: steps.cache-box64.outputs.cache-hit != 'true'
+        run: |
+          # 即使 build 阶段 stamp 文件目录不存在, 也强制建一份
+          # 用来隔离"路径不存在导致 save 失败"和"cache 机制不工作"
+          mkdir -p "${GITHUB_WORKSPACE}/build/box64_build"
+          mkdir -p "${GITHUB_WORKSPACE}/build/.stamps"
+          echo "diag $(date -u +%FT%TZ)" > "${GITHUB_WORKSPACE}/build/.stamps/box64-arm64-v8a"
+          echo "sentinel written:"
+          ls -la "${GITHUB_WORKSPACE}/build/.stamps/box64-arm64-v8a"
+          ls -la "${GITHUB_WORKSPACE}/build/box64_build/" 2>&1 | head -5
