@@ -97,7 +97,8 @@ jobs:
         if: steps.cache-box64.outputs.cache-hit != 'true'
         run: |
           set -euxo pipefail
-          # 只跑 box64 目标, 不跑其他
+          # 补上 Makefile 假定已经存在的目标目录
+          mkdir -p entry/libs/arm64-v8a
           make NATIVE_ARCH=arm64-v8a box64
 
       - name: Post-build diagnosis
