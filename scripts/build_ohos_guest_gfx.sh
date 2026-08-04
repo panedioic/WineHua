@@ -326,7 +326,8 @@ setup_build_env() {
             meson setup "$wl_build" "$wayland_src" -Ddocumentation=false -Dtests=false
             meson compile -C "$wl_build"
             mkdir -p "$HOST_TOOLS_DIR/bin"
-            cp "$wl_build/wayland-scanner" "$HOST_TOOLS_DIR/bin/"
+            # meson 生成的 wayland-scanner 位于 src/ 子目录下, 不是 build root
+            cp "$wl_build/src/wayland-scanner" "$HOST_TOOLS_DIR/bin/"
             export WAYLAND_SCANNER="$HOST_TOOLS_DIR/bin/wayland-scanner"
         fi
     fi

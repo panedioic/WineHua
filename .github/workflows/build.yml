@@ -265,23 +265,6 @@ jobs:
           echo "== nproc =="
           nproc
 
-      - name: Build guest graphics runtime (x64 + x86)
-        run: |
-          set -euxo pipefail
-          make NATIVE_ARCH=arm64-v8a dxvk
-          for dll in \
-            build/dxvk/legacy/x64/bin/d3d11.dll \
-            build/dxvk/legacy/x64/bin/dxgi.dll \
-            build/dxvk/legacy/x86/bin/d3d11.dll \
-            build/dxvk/legacy/x86/bin/dxgi.dll; do
-            test -s "$dll"
-          done
-          file build/dxvk/legacy/x64/bin/d3d11.dll \
-               build/dxvk/legacy/x64/bin/dxgi.dll \
-               build/dxvk/legacy/x86/bin/d3d11.dll \
-               build/dxvk/legacy/x86/bin/dxgi.dll
-          sha256sum build/dxvk/legacy/{x64,x86}/bin/{d3d11,dxgi}.dll
-
       # 分阶段构建, 每阶段结束后打点, 找出 build/ 消失的具体时机
       - name: Build stage 1 — deps + wine + box64 (cacheable)
         env:
@@ -308,6 +291,23 @@ jobs:
           echo "---- after box64 ----"
           ls -la build/ 2>&1 | head -20
           du -sh build/box64_build build/.stamps 2>/dev/null || true
+
+      - name: Build guest graphics runtime (x64 + x86)
+        run: |
+          set -euxo pipefail
+          make NATIVE_ARCH=arm64-v8a dxvk
+          for dll in \
+            build/dxvk/legacy/x64/bin/d3d11.dll \
+            build/dxvk/legacy/x64/bin/dxgi.dll \
+            build/dxvk/legacy/x86/bin/d3d11.dll \
+            build/dxvk/legacy/x86/bin/dxgi.dll; do
+            test -s "$dll"
+          done
+          file build/dxvk/legacy/x64/bin/d3d11.dll \
+               build/dxvk/legacy/x64/bin/dxgi.dll \
+               build/dxvk/legacy/x86/bin/d3d11.dll \
+               build/dxvk/legacy/x86/bin/dxgi.dll
+          sha256sum build/dxvk/legacy/{x64,x86}/bin/{d3d11,dxgi}.dll
 
       - name: Snapshot cacheable content before assemble/hap
         run: |
