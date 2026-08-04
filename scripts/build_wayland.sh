@@ -24,21 +24,33 @@ build_scanner() {
         ninja -C "$host_build"
         ninja -C "$host_build" install
     else
-        mkdir -p /tmp/wayland_native
-        meson setup /tmp/wayland_native "$WL_SRC" \
-            --prefix /usr/local -Ddocumentation=false -Dtests=false --buildtype=release
-        ninja -C /tmp/wayland_native
-        ninja -C /tmp/wayland_native install
+        # 装到项目内 build/host-tools/, 与 Darwin 分支一致.
+        # 好处: (1) 不污染 /usr/local, 无需 sudo; (2) 进 cache 后可复用,
+        #        避免 cache 命中时 build_wayland.sh early-return, 但
+        #        /usr/local 里没这个二进制导致后续 mesa 找不到.
+        local host_build="$BUILD_DIR/wayland_native"
+        local host_prefix="$BUILD_DIR/host-tools"
+        mkdir -p "$host_build" "$host_prefix"
+        meson setup "$host_build" "$WL_SRC" \
+            --prefix "$host_prefix" \
+            -Dlibraries=false -Dscanner=true -Ddtd_validation=false \
+            -Ddocumentation=false -Dtests=false --buildtype=release
+        ninja -C "$host_build"
+        ninja -C "$host_build" install
     fi
     log "wayland-scanner: $(which wayland-scanner)"
 }
 
 log "=== 构建 Wayland (x86_64) ==="
 
+# early-return 前也要保证 native wayland-scanner 可用. 否则 cache 命中恢复了
+# 交叉编译产物, 但 build_scanner 被 skip, /usr/local (或旧路径) 里的
+# scanner 缺失, 后续 mesa 会失败.
 if [ -f "$SYSROOT_EXT_LIB/libwayland-client.so.0" ] \
    && [ -f "$SYSROOT_EXT_LIB/libwayland-client.so" ] \
    && [ -f "$SYSROOT_EXT_INC/wayland-client.h" ] \
-   && [ -f "$SYSROOT_EXT_PC/wayland-client.pc" ]; then
+   && [ -f "$SYSROOT_EXT_PC/wayland-client.pc" ] \
+   && ( [ -x "$SCANNER" ] || [ -x "$BUILD_DIR/host-tools/bin/wayland-scanner" ] ); then
     log "Wayland 已就绪，跳过"
     exit 0
 fi

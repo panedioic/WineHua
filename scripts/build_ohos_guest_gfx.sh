@@ -616,9 +616,17 @@ Cflags: -I\${includedir}
 EOF
     fi
 
-    # wayland-scanner host tool .pc for PKG_CONFIG_LIBDIR isolation
-    if [ ! -f "$SYSROOT_EXT_PC/wayland-scanner.pc" ] && command -v wayland-scanner >/dev/null 2>&1; then
-        local wlscan_prefix="$(dirname "$(dirname "$(command -v wayland-scanner)")")"
+    # wayland-scanner host tool .pc for PKG_CONFIG_LIBDIR isolation.
+    # 无条件重写: cache 恢复时旧 pc 里的 prefix 可能与当次运行环境不符
+    # (比如上次装到 /usr/local, 这次改装到 build/host-tools/).
+    local wlscan_bin=""
+    if [ -x "$WAYLAND_SCANNER" ]; then
+        wlscan_bin="$WAYLAND_SCANNER"
+    elif command -v wayland-scanner >/dev/null 2>&1; then
+        wlscan_bin="$(command -v wayland-scanner)"
+    fi
+    if [ -n "$wlscan_bin" ]; then
+        local wlscan_prefix="$(dirname "$(dirname "$wlscan_bin")")"
         cat > "$SYSROOT_EXT_PC/wayland-scanner.pc" <<EOF
 prefix=$wlscan_prefix
 includedir=\${prefix}/include

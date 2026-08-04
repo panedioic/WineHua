@@ -54,3 +54,4 @@ entry/src/main/resources/rawfile/wine-data.zip
 entry/src/main/resources/rawfile/wine-runtime-manifest.json
 tmp/
 prebuilt/
+harmony-sdk/

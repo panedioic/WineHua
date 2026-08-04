@@ -175,14 +175,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/build/sysroot-ext
-          key: deps-v2-sysroot-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
+          key: deps-v3-sysroot-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
 
       - name: Cache deps stamp
         id: cache-deps-stamp
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/build/.stamps/deps
-          key: deps-v2-stamp-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
+          key: deps-v3-stamp-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
 
       - name: Cache Wine native tools
         id: cache-wine-native
