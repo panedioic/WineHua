@@ -318,15 +318,53 @@ jobs:
           ls -la build/ 2>&1 | head -20
           du -sh build/sysroot-ext build/.stamps 2>/dev/null || true
 
-          make NATIVE_ARCH=arm64-v8a wine
-          echo "---- after wine ----"
-          ls -la build/ 2>&1 | head -20
-          du -sh build/wine-native build/wine-ohos build/wine_server build/.stamps 2>/dev/null || true
+          # ============================================================
+          # TEMP: stub wine + box64 (真实编译 40+ 分钟, 先用占位文件
+          # 验证 cache 保存/恢复与后续 assemble/hap 流程).
+          # 恢复真实编译时: 删掉此段, 恢复文件底部注释里的两行 make.
+          # ============================================================
+          mkdir -p build/wine-native/tools/winegcc
+          echo "stub" > build/wine-native/tools/winegcc/winegcc
+          chmod +x build/wine-native/tools/winegcc/winegcc
 
-          make NATIVE_ARCH=arm64-v8a box64
-          echo "---- after box64 ----"
-          ls -la build/ 2>&1 | head -20
-          du -sh build/box64_build build/.stamps 2>/dev/null || true
+          mkdir -p build/wine-ohos/loader
+          echo "stub" > build/wine-ohos/loader/wine
+          mkdir -p build/wine-ohos/dlls/ntdll build/wine-ohos/dlls/winewayland.drv \
+                   build/wine-ohos/dlls/wineohos.drv build/wine-ohos/dlls/win32u \
+                   build/wine-ohos/dlls/winevulkan
+          for so in ntdll winewayland wineohos win32u winevulkan; do
+            echo "stub" > "build/wine-ohos/dlls/$so/$so.so" 2>/dev/null || true
+          done
+          echo "stub" > build/wine-ohos/dlls/ntdll/ntdll.so
+          echo "stub" > build/wine-ohos/dlls/winewayland.drv/winewayland.so
+          echo "stub" > build/wine-ohos/dlls/wineohos.drv/wineohos.so
+          echo "stub" > build/wine-ohos/dlls/win32u/win32u.so
+          echo "stub" > build/wine-ohos/dlls/winevulkan/winevulkan.so
+          for d in ntdll kernel32 user32 gdi32 wineboot explorer; do
+            mkdir -p "build/wine-ohos/dlls/$d/x86_64-windows" "build/wine-ohos/dlls/$d/i386-windows"
+            echo "stub" > "build/wine-ohos/dlls/$d/x86_64-windows/$d.dll"
+            echo "stub" > "build/wine-ohos/dlls/$d/i386-windows/$d.dll"
+          done
+          for prog in wineboot explorer; do
+            mkdir -p "build/wine-ohos/programs/$prog/x86_64-windows"
+            echo "stub" > "build/wine-ohos/programs/$prog/x86_64-windows/$prog.exe"
+          done
+
+          mkdir -p build/wine_server build/box64_build
+          echo "stub" > build/wine_server/wineserver
+          echo "stub" > build/box64_build/box64.so
+
+          mkdir -p build/.stamps
+          touch build/.stamps/wine-arm64-v8a
+          touch build/.stamps/box64-arm64-v8a
+
+          echo "---- stub wine+box64 done ----"
+          du -sh build/wine-native build/wine-ohos build/wine_server build/box64_build 2>/dev/null || true
+          # ============================================================
+          # TEMP-END. 恢复真实编译时取消注释:
+          #   make NATIVE_ARCH=arm64-v8a wine
+          #   make NATIVE_ARCH=arm64-v8a box64
+          # ============================================================
 
       - name: Build guest graphics runtime (x64 + x86)
         run: |
