@@ -247,7 +247,47 @@ jobs:
                build/dxvk/legacy/x86/bin/dxgi.dll
           sha256sum build/dxvk/legacy/{x64,x86}/bin/{d3d11,dxgi}.dll
 
-      - name: Build HAP
+      # 分阶段构建, 每阶段结束后打点, 找出 build/ 消失的具体时机
+      - name: Build stage 1 — deps + wine + box64 (cacheable)
+        env:
+          BUILD_GUEST_GFX: '1'
+          BUILD_GUEST_VULKAN: '1'
+          BUILD_WINE_MONO: '1'
+        run: |
+          set -euxo pipefail
+          make NATIVE_ARCH=arm64-v8a deps
+          echo "---- after deps ----"
+          ls -la build/ 2>&1 | head -20
+          du -sh build/sysroot-ext build/.stamps 2>/dev/null || true
+
+          make NATIVE_ARCH=arm64-v8a wine
+          echo "---- after wine ----"
+          ls -la build/ 2>&1 | head -20
+          du -sh build/wine-native build/wine-ohos build/wine_server build/.stamps 2>/dev/null || true
+
+          make NATIVE_ARCH=arm64-v8a box64
+          echo "---- after box64 ----"
+          ls -la build/ 2>&1 | head -20
+          du -sh build/box64_build build/.stamps 2>/dev/null || true
+
+      - name: Snapshot cacheable content before assemble/hap
+        run: |
+          set -eux
+          # 在 assemble/hap 之前先备份, 无论后面 build/ 发生什么, snapshot 保住产物
+          mkdir -p build-cache-snapshot
+          for src in build/sysroot-ext build/wine-native build/wine-ohos \
+                     build/wine_server build/box64_build build/.stamps; do
+            if [ -e "$src" ]; then
+              # 用硬链接省空间; 跨设备退回 cp -a
+              cp -al "$src" "build-cache-snapshot/$(basename "$src")" 2>/dev/null || \
+                cp -a  "$src" "build-cache-snapshot/$(basename "$src")"
+            fi
+          done
+          echo "---- snapshot content ----"
+          ls -la build-cache-snapshot/
+          du -sh build-cache-snapshot/* 2>/dev/null || true
+
+      - name: Build stage 2 — native + assemble + hap
         env:
           BUILD_GUEST_GFX: '1'
           BUILD_GUEST_VULKAN: '1'
@@ -255,6 +295,30 @@ jobs:
         run: |
           set -euxo pipefail
           make NATIVE_ARCH=arm64-v8a hap
+          echo "---- after hap ----"
+          ls -la build/ 2>&1 | head -20 || echo "(build/ missing)"
+
+      - name: Restore snapshot for cache save
+        if: always()
+        run: |
+          set -eux
+          # 无论 build/ 是否消失, 把 snapshot 内容放回原位
+          if [ -d build-cache-snapshot ]; then
+            mkdir -p build build/.stamps
+            for d in build-cache-snapshot/*; do
+              name=$(basename "$d")
+              if [ "$name" = ".stamps" ]; then
+                cp -a "$d"/. build/.stamps/
+              else
+                # 目标可能已存在, 先清再复制
+                rm -rf "build/$name"
+                cp -a "$d" "build/$name"
+              fi
+            done
+            echo "---- restored build/ ----"
+            ls -la build/
+            du -sh build/* 2>/dev/null | sort -h | tail -20
+          fi
 
       # 深度诊断: 看清楚 build/ 下真实产出
       - name: Diagnose build tree
