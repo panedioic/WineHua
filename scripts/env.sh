@@ -114,6 +114,21 @@ else
     export WAYLAND_SCANNER="${WAYLAND_SCANNER:-$BUILD_DIR/host-tools/bin/wayland-scanner}"
 fi
 
+# 让所有 sub-script (build_wayland/xkbcommon/mesa/...) 共享同一份
+# pkg-config 搜索路径. 每个 script 是独立 bash 子进程, 只有在 env.sh
+# 里 export 才能被自动继承.
+#
+# PKG_CONFIG_PATH 是追加, PKG_CONFIG_LIBDIR 是替换. meson 处理
+# dependency(..., native: true) 时启动 host pkg-config 子进程,
+# 系统默认路径不含 sysroot-ext, 必须靠这里指定.
+if [ -d "$SYSROOT_EXT_PC" ] || [ "${FORCE_EXPORT_PKG_CONFIG:-1}" = "1" ]; then
+    # 取 pkg-config 自身报告的默认路径, 兜底若命令失败
+    _PC_DEFAULT="$($PKG_CONFIG_BIN --variable pc_path pkg-config 2>/dev/null || echo /usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig)"
+    export PKG_CONFIG_PATH="$SYSROOT_EXT_PC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT_EXT_PC:$_PC_DEFAULT}"
+    unset _PC_DEFAULT
+fi
+
 # HAP 项目
 WINEHUA="$ROOT"
 
