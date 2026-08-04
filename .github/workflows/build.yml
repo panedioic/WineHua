@@ -292,6 +292,41 @@ jobs:
           ls -la build/ 2>&1 | head -20
           du -sh build/box64_build build/.stamps 2>/dev/null || true
 
+      # 诊断: dxvk / mesa 需要 native wayland-scanner, 上一次 mesa 报
+      # "Program '/usr/local/bin/wayland-scanner' not found or not executable"
+      # 先看清楚 stage-1 后到底装了没
+      - name: Diagnose native wayland-scanner
+        run: |
+          set +e
+          echo "== PATH =="
+          echo "$PATH"
+          echo
+          echo "== which/type =="
+          which wayland-scanner
+          type wayland-scanner
+          command -v wayland-scanner
+          echo
+          echo "== 常见路径 =="
+          for p in /usr/local/bin/wayland-scanner /usr/bin/wayland-scanner \
+                   build/host-tools/bin/wayland-scanner build/wayland-scanner-build/src/wayland-scanner; do
+            if [ -e "$p" ]; then
+              printf "%s  " "$p"
+              ls -la "$p" 2>&1
+              [ -x "$p" ] && echo "  → executable" || echo "  → NOT executable"
+            else
+              echo "$p → MISSING"
+            fi
+          done
+          echo
+          echo "== pkg-config =="
+          pkg-config --exists wayland-scanner && echo "wayland-scanner.pc: present" || echo "wayland-scanner.pc: MISSING"
+          pkg-config --variable=wayland_scanner wayland-scanner 2>&1
+          pkg-config --modversion wayland-scanner 2>&1
+          echo
+          echo "== try to run =="
+          /usr/local/bin/wayland-scanner --version 2>&1 || echo "cannot run /usr/local/bin/wayland-scanner"
+          exit 0
+
       - name: Build guest graphics runtime (x64 + x86)
         run: |
           set -euxo pipefail
