@@ -255,6 +255,10 @@ jobs:
           BUILD_WINE_MONO: '1'
         run: |
           set -euxo pipefail
+          # Makefile box64 recipe cp box64.so to entry/libs/arm64-v8a/,
+          # normally created by native stage; running box64 alone needs manual mkdir.
+          mkdir -p entry/libs/arm64-v8a
+
           make NATIVE_ARCH=arm64-v8a deps
           echo "---- after deps ----"
           ls -la build/ 2>&1 | head -20
