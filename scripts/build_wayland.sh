@@ -63,6 +63,39 @@ if [ "$HOST_OS" = "Darwin" ]; then
 fi
 
 mkdir -p "$SYSROOT_EXT_INC" "$SYSROOT_EXT_LIB" "$SYSROOT_EXT_PC" "$SYSROOT_EXT_SHARE"
+
+# 写 wayland-scanner.pc *在 wayland 交叉编译之前*.
+# wayland/src/meson.build:81 里 dependency('wayland-scanner', native: true)
+# 走 pkg-config, 必须能读到 pc 文件. 之前 pc 文件由 build_ohos_guest_gfx.sh
+# 生成但那是后续阶段, wayland 交叉编译时 pc 还不存在 → 编译失败.
+_wlscan_bin=""
+if [ -x "$SCANNER" ]; then
+    _wlscan_bin="$SCANNER"
+elif command -v wayland-scanner >/dev/null 2>&1; then
+    _wlscan_bin="$(command -v wayland-scanner)"
+fi
+if [ -n "$_wlscan_bin" ]; then
+    _wlscan_prefix="$(dirname "$(dirname "$_wlscan_bin")")"
+    cat > "$SYSROOT_EXT_PC/wayland-scanner.pc" <<EOF
+prefix=$_wlscan_prefix
+includedir=\${prefix}/include
+datarootdir=\${prefix}/share
+pkgdatadir=\${datarootdir}/wayland
+bindir=\${prefix}/bin
+wayland_scanner=\${bindir}/wayland-scanner
+
+Name: Wayland Scanner
+Description: Wayland scanner
+Version: 1.22.0
+Cflags: -I\${includedir}
+EOF
+    log "wayland-scanner.pc → $SYSROOT_EXT_PC (scanner at $_wlscan_bin)"
+    # 让当前 shell 里的 pkg-config 找到这份 pc, 供后续 meson_build 使用
+    export PKG_CONFIG_PATH="$SYSROOT_EXT_PC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+else
+    err "wayland-scanner not found after build_scanner; cannot write wayland-scanner.pc"
+fi
+
 mkdir -p "$WL_BUILD"
 
 # 1. 交叉编译 wayland (client + egl)
