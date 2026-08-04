@@ -209,9 +209,18 @@ build_wayland() {
 
     # libffi 头文件/库已在 cross file 的 c_args/c_link_args 中
     export PKG_CONFIG_PATH="$NATIVE_BUILD/libffi/install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    meson setup "$build" "$src" \
-        --cross-file "$cross" \
-        -Ddocumentation=false -Dtests=false -Dscanner=false
+    # meson 交叉编译 wayland 时会走 dependency('wayland-scanner', native: true)
+    # 走 host pkg-config, 需要能找到 sysroot-ext 里的 wayland-scanner.pc
+    # (deps 阶段生成). 用 subshell 局部 export, 避免污染后续 build_virglrenderer
+    # (那里加了 gbm 会有副作用).
+    _pc_default_native="$($PKG_CONFIG_BIN --variable pc_path pkg-config 2>/dev/null || echo /usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig)"
+    (
+        export PKG_CONFIG_LIBDIR="$SYSROOT_EXT_PC:$_pc_default_native"
+        meson setup "$build" "$src" \
+            --cross-file "$cross" \
+            -Ddocumentation=false -Dtests=false -Dscanner=false
+    )
+    unset _pc_default_native
 
     ninja -C "$build"
 
