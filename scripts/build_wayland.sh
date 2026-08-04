@@ -90,8 +90,13 @@ Version: 1.22.0
 Cflags: -I\${includedir}
 EOF
     log "wayland-scanner.pc → $SYSROOT_EXT_PC (scanner at $_wlscan_bin)"
-    # 让当前 shell 里的 pkg-config 找到这份 pc, 供后续 meson_build 使用
+    # meson 处理 dependency(..., native: true) 时走 native pkg-config,
+    # 而 cross file 里的 pkg_config_path 只对 target 依赖生效.
+    # PKG_CONFIG_PATH 也可能被 meson 环境剥离. 用优先级最高的
+    # PKG_CONFIG_LIBDIR 强制覆盖 pkg-config 默认搜索路径.
+    _pkg_default="$(pkg-config --variable pc_path pkg-config 2>/dev/null || echo /usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig)"
     export PKG_CONFIG_PATH="$SYSROOT_EXT_PC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_LIBDIR="$SYSROOT_EXT_PC:$_pkg_default"
 else
     err "wayland-scanner not found after build_scanner; cannot write wayland-scanner.pc"
 fi
