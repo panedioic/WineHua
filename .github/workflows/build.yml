@@ -318,85 +318,15 @@ jobs:
           ls -la build/ 2>&1 | head -20
           du -sh build/sysroot-ext build/.stamps 2>/dev/null || true
 
-          # ============================================================
-          # TEMP: stub wine + box64 (真实编译 40+ 分钟, 先用占位文件
-          # 验证 cache 保存/恢复与后续 assemble/hap 流程).
-          # 恢复真实编译时: 删掉此段, 恢复文件底部注释里的两行 make.
-          # ============================================================
-          # 生成 tiny 但真实的 PE dll/exe (mingw 编空源文件),
-          # 让 x86_64-w64-mingw32-strip 能 strip 通过.
-          stub_src="$(mktemp --suffix=.c)"
-          echo "int _stub(void){return 0;}" > "$stub_src"
-          stub_dll_x64="$(mktemp --suffix=.dll)"
-          stub_dll_x86="$(mktemp --suffix=.dll)"
-          stub_exe_x64="$(mktemp --suffix=.exe)"
-          stub_exe_x86="$(mktemp --suffix=.exe)"
-          x86_64-w64-mingw32-gcc -shared -o "$stub_dll_x64" "$stub_src" -Wl,--out-implib,/dev/null 2>/dev/null || \
-              x86_64-w64-mingw32-gcc -shared -o "$stub_dll_x64" "$stub_src"
-          i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src" -Wl,--out-implib,/dev/null 2>/dev/null || \
-              i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src"
-          # 用 -mconsole 让 crt 链 main 而不是 WinMain (源里定义的是 _stub)
-          echo "int main(void){return 0;}" > "$stub_src"
-          x86_64-w64-mingw32-gcc -mconsole -o "$stub_exe_x64" "$stub_src"
-          i686-w64-mingw32-gcc   -mconsole -o "$stub_exe_x86" "$stub_src"
-          ls -la "$stub_dll_x64" "$stub_dll_x86" "$stub_exe_x64" "$stub_exe_x86"
+          make NATIVE_ARCH=arm64-v8a wine
+          echo "---- after wine ----"
+          ls -la build/ 2>&1 | head -20
+          du -sh build/wine-native build/wine-ohos build/wine_server build/.stamps 2>/dev/null || true
 
-          # wine-native: WINE_SENTINEL := build/wine-native/tools/winegcc/winegcc
-          mkdir -p build/wine-native/tools/winegcc
-          echo "stub" > build/wine-native/tools/winegcc/winegcc
-          chmod +x build/wine-native/tools/winegcc/winegcc
-
-          # wine-ohos: ELF-ish loader + fake .so per dll dir + PE mirrors
-          mkdir -p build/wine-ohos/loader
-          echo "stub" > build/wine-ohos/loader/wine
-          for so in ntdll winewayland wineohos win32u winevulkan kernel32 user32 gdi32; do
-            base="$so"
-            case "$so" in
-              winewayland) dir="winewayland.drv" ;;
-              wineohos)    dir="wineohos.drv" ;;
-              *)           dir="$so" ;;
-            esac
-            mkdir -p "build/wine-ohos/dlls/$dir"
-            echo "stub" > "build/wine-ohos/dlls/$dir/$base.so"
-          done
-          # PE mirror: x86_64-windows/*.dll 和 i386-windows/*.dll
-          for d in ntdll kernel32 user32 gdi32 wineboot explorer advapi32 comctl32 shell32 ole32; do
-            mkdir -p "build/wine-ohos/dlls/$d/x86_64-windows" "build/wine-ohos/dlls/$d/i386-windows"
-            cp "$stub_dll_x64" "build/wine-ohos/dlls/$d/x86_64-windows/$d.dll"
-            cp "$stub_dll_x86" "build/wine-ohos/dlls/$d/i386-windows/$d.dll"
-          done
-          # programs/*/x86_64-windows/*.exe + i386-windows/*.exe
-          # 包括 assemble.sh 强制要求的 4 个 managed smoke program (audio/graphics/vulkan/d3d11)
-          # 以及 wineboot/explorer 这类通常存在的 wine 附带程序.
-          for prog in wineboot explorer winecfg regedit \
-                      winehua_audio_smoke winehua_graphics_smoke \
-                      winehua_vulkan_smoke winehua_d3d11_smoke; do
-            mkdir -p "build/wine-ohos/programs/$prog/x86_64-windows" \
-                     "build/wine-ohos/programs/$prog/i386-windows"
-            cp "$stub_exe_x64" "build/wine-ohos/programs/$prog/x86_64-windows/$prog.exe"
-            cp "$stub_exe_x86" "build/wine-ohos/programs/$prog/i386-windows/$prog.exe"
-          done
-
-          # wine_server + box64
-          mkdir -p build/wine_server build/box64_build
-          echo "stub" > build/wine_server/wineserver
-          echo "stub" > build/box64_build/box64.so
-
-          # stamps
-          mkdir -p build/.stamps
-          touch build/.stamps/wine-arm64-v8a
-          touch build/.stamps/box64-arm64-v8a
-
-          rm -f "$stub_src" "$stub_dll_x64" "$stub_dll_x86" "$stub_exe_x64" "$stub_exe_x86"
-
-          echo "---- stub wine+box64 done ----"
-          du -sh build/wine-native build/wine-ohos build/wine_server build/box64_build 2>/dev/null || true
-          # ============================================================
-          # TEMP-END. 恢复真实编译时取消注释:
-          #   make NATIVE_ARCH=arm64-v8a wine
-          #   make NATIVE_ARCH=arm64-v8a box64
-          # ============================================================
-
+          make NATIVE_ARCH=arm64-v8a box64
+          echo "---- after box64 ----"
+          ls -la build/ 2>&1 | head -20
+          du -sh build/box64_build build/.stamps 2>/dev/null || true
       - name: Build guest graphics runtime (x64 + x86)
         run: |
           set -euxo pipefail
