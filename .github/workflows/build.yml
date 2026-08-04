@@ -335,8 +335,10 @@ jobs:
               x86_64-w64-mingw32-gcc -shared -o "$stub_dll_x64" "$stub_src"
           i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src" -Wl,--out-implib,/dev/null 2>/dev/null || \
               i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src"
-          x86_64-w64-mingw32-gcc          -o "$stub_exe_x64" "$stub_src"
-          i686-w64-mingw32-gcc            -o "$stub_exe_x86" "$stub_src"
+          # 用 -mconsole 让 crt 链 main 而不是 WinMain (源里定义的是 _stub)
+          echo "int main(void){return 0;}" > "$stub_src"
+          x86_64-w64-mingw32-gcc -mconsole -o "$stub_exe_x64" "$stub_src"
+          i686-w64-mingw32-gcc   -mconsole -o "$stub_exe_x86" "$stub_src"
           ls -la "$stub_dll_x64" "$stub_dll_x86" "$stub_exe_x64" "$stub_exe_x86"
 
           # wine-native: WINE_SENTINEL := build/wine-native/tools/winegcc/winegcc
