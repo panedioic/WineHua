@@ -277,7 +277,43 @@ jobs:
           # normally created by native stage; running box64 alone needs manual mkdir.
           mkdir -p entry/libs/arm64-v8a
 
-          make NATIVE_ARCH=arm64-v8a deps
+          # Deep diagnostic: mesa keeps failing with
+          #   "Program '/usr/local/bin/wayland-scanner' not found or not executable"
+          # Log everything about wayland-scanner state before/around the failure.
+          probe_scanner() {
+            echo "==== wayland-scanner probe: $1 ===="
+            echo "PATH=$PATH"
+            which wayland-scanner || echo "(which failed)"
+            command -v wayland-scanner || echo "(command -v failed)"
+            for pth in /usr/local/bin/wayland-scanner /usr/bin/wayland-scanner \
+                       "$PWD/build/host-tools/bin/wayland-scanner"; do
+              if [ -e "$pth" ]; then
+                ls -la "$pth"
+                [ -x "$pth" ] && echo "  -> executable" || echo "  -> NOT executable"
+                file "$pth" 2>/dev/null | head -1
+              else
+                echo "$pth -> MISSING"
+              fi
+            done
+            echo "--- pkg-config ---"
+            pkg-config --exists wayland-scanner && echo "wayland-scanner.pc: OK" || echo "wayland-scanner.pc: MISSING"
+            pkg-config --variable=wayland_scanner wayland-scanner 2>&1 || true
+            if [ -f "$PWD/build/sysroot-ext/usr/lib/pkgconfig/wayland-scanner.pc" ]; then
+              echo "--- sysroot-ext wayland-scanner.pc ---"
+              cat "$PWD/build/sysroot-ext/usr/lib/pkgconfig/wayland-scanner.pc"
+            fi
+            echo
+          }
+
+          probe_scanner "BEFORE make deps"
+          make NATIVE_ARCH=arm64-v8a deps || {
+            rc=$?
+            echo
+            echo "==== make deps FAILED, probing state ===="
+            probe_scanner "AFTER make deps FAILURE"
+            exit $rc
+          }
+          probe_scanner "AFTER make deps SUCCESS"
           echo "---- after deps ----"
           ls -la build/ 2>&1 | head -20
           du -sh build/sysroot-ext build/.stamps 2>/dev/null || true
@@ -291,41 +327,6 @@ jobs:
           echo "---- after box64 ----"
           ls -la build/ 2>&1 | head -20
           du -sh build/box64_build build/.stamps 2>/dev/null || true
-
-      # 诊断: dxvk / mesa 需要 native wayland-scanner, 上一次 mesa 报
-      # "Program '/usr/local/bin/wayland-scanner' not found or not executable"
-      # 先看清楚 stage-1 后到底装了没
-      - name: Diagnose native wayland-scanner
-        run: |
-          set +e
-          echo "== PATH =="
-          echo "$PATH"
-          echo
-          echo "== which/type =="
-          which wayland-scanner
-          type wayland-scanner
-          command -v wayland-scanner
-          echo
-          echo "== 常见路径 =="
-          for p in /usr/local/bin/wayland-scanner /usr/bin/wayland-scanner \
-                   build/host-tools/bin/wayland-scanner build/wayland-scanner-build/src/wayland-scanner; do
-            if [ -e "$p" ]; then
-              printf "%s  " "$p"
-              ls -la "$p" 2>&1
-              [ -x "$p" ] && echo "  → executable" || echo "  → NOT executable"
-            else
-              echo "$p → MISSING"
-            fi
-          done
-          echo
-          echo "== pkg-config =="
-          pkg-config --exists wayland-scanner && echo "wayland-scanner.pc: present" || echo "wayland-scanner.pc: MISSING"
-          pkg-config --variable=wayland_scanner wayland-scanner 2>&1
-          pkg-config --modversion wayland-scanner 2>&1
-          echo
-          echo "== try to run =="
-          /usr/local/bin/wayland-scanner --version 2>&1 || echo "cannot run /usr/local/bin/wayland-scanner"
-          exit 0
 
       - name: Build guest graphics runtime (x64 + x86)
         run: |
