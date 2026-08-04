@@ -1,23 +1,14 @@
 # .github/workflows/cache-diag-stub.yml
-# Stub cache 诊断: 不跑真实构建, 用 dd 生成占位文件模拟产物
-# 目的: 快速迭代 cache 保存/恢复逻辑, 单次 <2 分钟, 不用等 50 分钟真实构建
+# Stub cache 诊断 v2: 每个目录独立 cache 条目, 验证多路径 cache 是否是 bug
 name: Cache Diag Stub (fake outputs)
 
 on:
   workflow_dispatch:
     inputs:
-      wine_size_mb:
+      wine_ohos_size_mb:
         description: 'wine-ohos 大小 (MB)'
         required: false
         default: '1000'
-      deps_size_mb:
-        description: 'sysroot-ext 大小 (MB)'
-        required: false
-        default: '16'
-      box64_size_mb:
-        description: 'box64_build 大小 (MB)'
-        required: false
-        default: '100'
 
 permissions:
   contents: read
@@ -39,149 +30,90 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     env:
-      WINE_SIZE_MB: ${{ github.event.inputs.wine_size_mb || '1000' }}
-      DEPS_SIZE_MB: ${{ github.event.inputs.deps_size_mb || '16' }}
-      BOX64_SIZE_MB: ${{ github.event.inputs.box64_size_mb || '100' }}
+      WINE_OHOS_SIZE_MB: ${{ github.event.inputs.wine_ohos_size_mb || '1000' }}
 
     steps:
       - name: Configure git safe.directory
         run: git config --global --add safe.directory '*'
 
-      - name: Checkout (no submodules, fast)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Show input params + disk space
+      - name: Show params
         run: |
-          echo "WINE_SIZE_MB=$WINE_SIZE_MB"
-          echo "DEPS_SIZE_MB=$DEPS_SIZE_MB"
-          echo "BOX64_SIZE_MB=$BOX64_SIZE_MB"
-          echo
+          echo "WINE_OHOS_SIZE_MB=$WINE_OHOS_SIZE_MB"
           df -h .
 
       # ============================================================
-      # 三个 cache action - 跟主 workflow 一模一样的配置
+      # 方案对比: 一个 cache 多个 path (v1, 已证明有 bug) vs 每目录单独 cache (v2)
       # ============================================================
-      - name: Cache deps (sysroot-ext)
-        id: cache-deps
+
+      # v1: 一个 cache 多个 path (复现 bug)
+      - name: Cache v1 — multi-path in one entry (bug reproducer)
+        id: cache-v1
         uses: actions/cache@v4
         with:
           path: |
-            ${{ github.workspace }}/build/sysroot-ext
-            ${{ github.workspace }}/build/.stamps/deps
-          key: stub-deps-v1-${{ env.DEPS_SIZE_MB }}
+            ${{ github.workspace }}/build-v1/wine-native
+            ${{ github.workspace }}/build-v1/wine-ohos
+            ${{ github.workspace }}/build-v1/wine_server
+          key: stub-v1-multipath-${{ env.WINE_OHOS_SIZE_MB }}
 
-      - name: Cache Wine build
-        id: cache-wine
+      # v2: 每个目录独立 cache (预期能成功)
+      - name: Cache v2a — wine-native alone
+        id: cache-v2a
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/build/wine-native
-            ${{ github.workspace }}/build/wine-ohos
-            ${{ github.workspace }}/build/wine_server
-            ${{ github.workspace }}/build/.stamps/wine-arm64-v8a
-          key: stub-wine-v1-${{ env.WINE_SIZE_MB }}
+          path: ${{ github.workspace }}/build-v2/wine-native
+          key: stub-v2a-wine-native-${{ env.WINE_OHOS_SIZE_MB }}
 
-      - name: Cache Box64 build
-        id: cache-box64
+      - name: Cache v2b — wine-ohos alone
+        id: cache-v2b
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/build/box64_build
-            ${{ github.workspace }}/build/.stamps/box64-arm64-v8a
-          key: stub-box64-v1-${{ env.BOX64_SIZE_MB }}
+          path: ${{ github.workspace }}/build-v2/wine-ohos
+          key: stub-v2b-wine-ohos-${{ env.WINE_OHOS_SIZE_MB }}
 
-      - name: Report cache hits
+      - name: Cache v2c — wine_server alone
+        id: cache-v2c
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build-v2/wine_server
+          key: stub-v2c-wine-server-${{ env.WINE_OHOS_SIZE_MB }}
+
+      - name: Report hits
         run: |
-          echo "deps  hit: ${{ steps.cache-deps.outputs.cache-hit }}"
-          echo "wine  hit: ${{ steps.cache-wine.outputs.cache-hit }}"
-          echo "box64 hit: ${{ steps.cache-box64.outputs.cache-hit }}"
+          echo "v1  multi-path  : ${{ steps.cache-v1.outputs.cache-hit }}"
+          echo "v2a wine-native : ${{ steps.cache-v2a.outputs.cache-hit }}"
+          echo "v2b wine-ohos   : ${{ steps.cache-v2b.outputs.cache-hit }}"
+          echo "v2c wine_server : ${{ steps.cache-v2c.outputs.cache-hit }}"
 
       # ============================================================
-      # 生成 stub 内容, 除非 cache 已命中
+      # 生成两套完全相同的 stub 内容
       # ============================================================
-      - name: Stub — generate fake outputs
-        if: |
-          steps.cache-deps.outputs.cache-hit != 'true' ||
-          steps.cache-wine.outputs.cache-hit != 'true' ||
-          steps.cache-box64.outputs.cache-hit != 'true'
+      - name: Generate stubs (both v1 and v2 layouts)
         run: |
           set -euxo pipefail
-          mkdir -p build/.stamps
-          mkdir -p build/sysroot-ext build/wine-native build/wine-ohos build/wine_server build/box64_build
+          for root in build-v1 build-v2; do
+            mkdir -p $root/wine-native $root/wine-ohos $root/wine_server
+            # 同样内容, 便于事后对比 cache 大小
+            dd if=/dev/urandom of=$root/wine-native/blob.bin  bs=1M count=50 status=none
+            dd if=/dev/urandom of=$root/wine-ohos/blob.bin    bs=1M count=$WINE_OHOS_SIZE_MB status=none
+            dd if=/dev/urandom of=$root/wine_server/blob.bin  bs=1M count=2 status=none
+          done
 
-          # 用小 bs + count, 但内容随机避免压缩后过小
-          echo "Generating deps stub (${DEPS_SIZE_MB} MB)..."
-          dd if=/dev/urandom of=build/sysroot-ext/blob.bin bs=1M count=$DEPS_SIZE_MB status=none
-          touch build/.stamps/deps
-
-          echo "Generating wine stubs..."
-          # wine-ohos 是最大的
-          dd if=/dev/urandom of=build/wine-ohos/blob.bin bs=1M count=$WINE_SIZE_MB status=none
-          # wine-native 相对小
-          dd if=/dev/urandom of=build/wine-native/blob.bin bs=1M count=50 status=none
-          # wine_server 最小
-          dd if=/dev/urandom of=build/wine_server/blob.bin bs=1M count=2 status=none
-          touch build/.stamps/wine-arm64-v8a
-
-          echo "Generating box64 stub (${BOX64_SIZE_MB} MB)..."
-          dd if=/dev/urandom of=build/box64_build/blob.bin bs=1M count=$BOX64_SIZE_MB status=none
-          touch build/.stamps/box64-arm64-v8a
-
-      # ============================================================
-      # 打点: 报告实际大小
-      # ============================================================
-      - name: Report actual sizes before post-hook
+      - name: Report actual sizes
         if: always()
         run: |
           set +e
-          echo "== ls -la build/ =="
-          ls -la build/ 2>&1
+          echo "== v1 (multi-path) =="
+          du -sh build-v1/* 2>&1
           echo
-          echo "== du -sh build/* =="
-          du -sh build/* 2>&1 | sort -h
+          echo "== v2 (per-dir) =="
+          du -sh build-v2/* 2>&1
           echo
-          echo "== cache path 内容 =="
-          for p in \
-              build/sysroot-ext \
-              build/wine-native \
-              build/wine-ohos \
-              build/wine_server \
-              build/box64_build \
-              build/.stamps/deps \
-              build/.stamps/wine-arm64-v8a \
-              build/.stamps/box64-arm64-v8a; do
-            if [ -e "$p" ]; then
-              size=$(du -sh "$p" 2>/dev/null | cut -f1)
-              printf "OK       %-40s  %s\n" "$p" "$size"
-            else
-              printf "MISSING  %-40s\n" "$p"
-            fi
-          done
-          echo
-          echo "== disk usage =="
+          echo "== disk =="
           df -h .
-          exit 0
-
-      # ============================================================
-      # 校验: 如果 cache 命中, 内容 sha256 应稳定
-      # ============================================================
-      - name: Compute checksums (for hit path validation)
-        if: always()
-        run: |
-          set +e
-          echo "== sha256 of stubs (if exist) =="
-          for f in \
-              build/sysroot-ext/blob.bin \
-              build/wine-ohos/blob.bin \
-              build/wine-native/blob.bin \
-              build/wine_server/blob.bin \
-              build/box64_build/blob.bin; do
-            if [ -f "$f" ]; then
-              size=$(stat -c%s "$f" 2>/dev/null || echo "?")
-              sha=$(sha256sum "$f" 2>/dev/null | cut -c1-16)
-              printf "%-40s size=%-12s sha=%s\n" "$f" "$size" "$sha"
-            fi
-          done
           exit 0
