@@ -167,40 +167,75 @@ jobs:
           echo "Wine sha: $wine_sha"
           echo "Box64 sha: $box64_sha"
 
-      - name: Cache deps (sysroot-ext)
+      # actions/cache@v4 在 container job 里对同一 cache 条目的多个 path
+      # 只会保存其中一个 (已用 stub workflow 复现). 因此每个目录/文件
+      # 独立一个 cache 条目. Key 前缀改成 v2, 与旧的坏 cache 区分.
+      - name: Cache deps sysroot-ext
         id: cache-deps
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/build/sysroot-ext
-            ${{ github.workspace }}/build/.stamps/deps
-          key: deps-v1-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
+          path: ${{ github.workspace }}/build/sysroot-ext
+          key: deps-v2-sysroot-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
 
-      - name: Cache Wine build
-        id: cache-wine
+      - name: Cache deps stamp
+        id: cache-deps-stamp
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/build/wine-native
-            ${{ github.workspace }}/build/wine-ohos
-            ${{ github.workspace }}/build/wine_server
-            ${{ github.workspace }}/build/.stamps/wine-arm64-v8a
-          key: wine-v1-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
+          path: ${{ github.workspace }}/build/.stamps/deps
+          key: deps-v2-stamp-${{ hashFiles('scripts/build_deps.sh', 'scripts/build_freetype.sh', 'scripts/env.sh') }}
+
+      - name: Cache Wine native tools
+        id: cache-wine-native
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/wine-native
+          key: wine-v2-native-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
+
+      - name: Cache Wine OHOS
+        id: cache-wine-ohos
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/wine-ohos
+          key: wine-v2-ohos-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
+
+      - name: Cache Wine server
+        id: cache-wine-server
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/wine_server
+          key: wine-v2-server-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
+
+      - name: Cache Wine stamp
+        id: cache-wine-stamp
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/.stamps/wine-arm64-v8a
+          key: wine-v2-stamp-arm64-v8a-${{ steps.shas.outputs.wine }}-${{ hashFiles('scripts/build_wine.sh', 'scripts/env.sh') }}
 
       - name: Cache Box64 build
         id: cache-box64
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ github.workspace }}/build/box64_build
-            ${{ github.workspace }}/build/.stamps/box64-arm64-v8a
-          key: box64-v1-${{ steps.shas.outputs.box64 }}-${{ hashFiles('scripts/build_box64.sh') }}
+          path: ${{ github.workspace }}/build/box64_build
+          key: box64-v2-build-${{ steps.shas.outputs.box64 }}-${{ hashFiles('scripts/build_box64.sh') }}
+
+      - name: Cache Box64 stamp
+        id: cache-box64-stamp
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/.stamps/box64-arm64-v8a
+          key: box64-v2-stamp-${{ steps.shas.outputs.box64 }}-${{ hashFiles('scripts/build_box64.sh') }}
 
       - name: Report cache hits
         run: |
-          echo "deps  cache-hit: ${{ steps.cache-deps.outputs.cache-hit }}"
-          echo "wine  cache-hit: ${{ steps.cache-wine.outputs.cache-hit }}"
-          echo "box64 cache-hit: ${{ steps.cache-box64.outputs.cache-hit }}"
+          echo "deps sysroot     : ${{ steps.cache-deps.outputs.cache-hit }}"
+          echo "deps stamp       : ${{ steps.cache-deps-stamp.outputs.cache-hit }}"
+          echo "wine native      : ${{ steps.cache-wine-native.outputs.cache-hit }}"
+          echo "wine ohos        : ${{ steps.cache-wine-ohos.outputs.cache-hit }}"
+          echo "wine server      : ${{ steps.cache-wine-server.outputs.cache-hit }}"
+          echo "wine stamp       : ${{ steps.cache-wine-stamp.outputs.cache-hit }}"
+          echo "box64 build      : ${{ steps.cache-box64.outputs.cache-hit }}"
+          echo "box64 stamp      : ${{ steps.cache-box64-stamp.outputs.cache-hit }}"
 
       # cache 恢复文件的 mtime 有时会用当前时间, 导致 Makefile 的
       # find -newer 误判 stamp 过期; 显式 touch 一下让 stamp 最新
