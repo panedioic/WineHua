@@ -3,6 +3,11 @@
 # 所有产物安装到 build/sysroot-ext/，不污染 OHOS SDK
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# deps 阶段需要 pkg-config 能命中 sysroot-ext (wayland-scanner.pc 等).
+# env.sh 检测到这个变量后会 export PKG_CONFIG_LIBDIR.
+# native 阶段 (build_native.sh) 不设这个变量, 保持 host pkg-config 默认行为,
+# 避免 virglrenderer 因看到交叉编译的 libdrm.pc 而误要求 gbm.
+export WANT_SYSROOT_EXT_PC=1
 source "$SCRIPT_DIR/env.sh"
 
 log "=== 构建模拟层交叉编译依赖 (Wine用, x86_64-linux-ohos) → sysroot-ext ==="

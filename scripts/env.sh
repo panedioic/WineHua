@@ -114,14 +114,17 @@ else
     export WAYLAND_SCANNER="${WAYLAND_SCANNER:-$BUILD_DIR/host-tools/bin/wayland-scanner}"
 fi
 
-# 让所有 sub-script (build_wayland/xkbcommon/mesa/...) 共享同一份
-# pkg-config 搜索路径. 每个 script 是独立 bash 子进程, 只有在 env.sh
-# 里 export 才能被自动继承.
+# 让 deps 阶段的 sub-script (build_wayland/xkbcommon/build_ohos_guest_gfx)
+# 共享同一份 pkg-config 搜索路径, 从而能命中 sysroot-ext 里的 pc 文件
+# (wayland-scanner.pc 等). 每个 script 是独立 bash 子进程, 只有在
+# env.sh 里 export 才能被自动继承.
 #
-# PKG_CONFIG_PATH 是追加, PKG_CONFIG_LIBDIR 是替换. meson 处理
-# dependency(..., native: true) 时启动 host pkg-config 子进程,
-# 系统默认路径不含 sysroot-ext, 必须靠这里指定.
-if [ -d "$SYSROOT_EXT_PC" ] || [ "${FORCE_EXPORT_PKG_CONFIG:-1}" = "1" ]; then
+# 但 native (arm64-v8a) 阶段编译 virglrenderer 时不能让 host pkg-config
+# 看到 sysroot-ext 里 x86_64 交叉编译的 pc 文件 (如 libdrm.pc),
+# 否则会误触发对 gbm 等的依赖判定. 因此改成 opt-in 模式:
+# 只有 script 显式设置 WANT_SYSROOT_EXT_PC=1 后再 source env.sh (或
+# 在 source 之前 export WANT_SYSROOT_EXT_PC=1) 才生效.
+if [ "${WANT_SYSROOT_EXT_PC:-0}" = "1" ]; then
     # 取 pkg-config 自身报告的默认路径, 兜底若命令失败
     _PC_DEFAULT="$($PKG_CONFIG_BIN --variable pc_path pkg-config 2>/dev/null || echo /usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig)"
     export PKG_CONFIG_PATH="$SYSROOT_EXT_PC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
