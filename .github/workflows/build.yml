@@ -323,40 +323,65 @@ jobs:
           # 验证 cache 保存/恢复与后续 assemble/hap 流程).
           # 恢复真实编译时: 删掉此段, 恢复文件底部注释里的两行 make.
           # ============================================================
+          # 生成 tiny 但真实的 PE dll/exe (mingw 编空源文件),
+          # 让 x86_64-w64-mingw32-strip 能 strip 通过.
+          stub_src="$(mktemp --suffix=.c)"
+          echo "int _stub(void){return 0;}" > "$stub_src"
+          stub_dll_x64="$(mktemp --suffix=.dll)"
+          stub_dll_x86="$(mktemp --suffix=.dll)"
+          stub_exe_x64="$(mktemp --suffix=.exe)"
+          stub_exe_x86="$(mktemp --suffix=.exe)"
+          x86_64-w64-mingw32-gcc -shared -o "$stub_dll_x64" "$stub_src" -Wl,--out-implib,/dev/null 2>/dev/null || \
+              x86_64-w64-mingw32-gcc -shared -o "$stub_dll_x64" "$stub_src"
+          i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src" -Wl,--out-implib,/dev/null 2>/dev/null || \
+              i686-w64-mingw32-gcc    -shared -o "$stub_dll_x86" "$stub_src"
+          x86_64-w64-mingw32-gcc          -o "$stub_exe_x64" "$stub_src"
+          i686-w64-mingw32-gcc            -o "$stub_exe_x86" "$stub_src"
+          ls -la "$stub_dll_x64" "$stub_dll_x86" "$stub_exe_x64" "$stub_exe_x86"
+
+          # wine-native: WINE_SENTINEL := build/wine-native/tools/winegcc/winegcc
           mkdir -p build/wine-native/tools/winegcc
           echo "stub" > build/wine-native/tools/winegcc/winegcc
           chmod +x build/wine-native/tools/winegcc/winegcc
 
+          # wine-ohos: ELF-ish loader + fake .so per dll dir + PE mirrors
           mkdir -p build/wine-ohos/loader
           echo "stub" > build/wine-ohos/loader/wine
-          mkdir -p build/wine-ohos/dlls/ntdll build/wine-ohos/dlls/winewayland.drv \
-                   build/wine-ohos/dlls/wineohos.drv build/wine-ohos/dlls/win32u \
-                   build/wine-ohos/dlls/winevulkan
-          for so in ntdll winewayland wineohos win32u winevulkan; do
-            echo "stub" > "build/wine-ohos/dlls/$so/$so.so" 2>/dev/null || true
+          for so in ntdll winewayland wineohos win32u winevulkan kernel32 user32 gdi32; do
+            base="$so"
+            case "$so" in
+              winewayland) dir="winewayland.drv" ;;
+              wineohos)    dir="wineohos.drv" ;;
+              *)           dir="$so" ;;
+            esac
+            mkdir -p "build/wine-ohos/dlls/$dir"
+            echo "stub" > "build/wine-ohos/dlls/$dir/$base.so"
           done
-          echo "stub" > build/wine-ohos/dlls/ntdll/ntdll.so
-          echo "stub" > build/wine-ohos/dlls/winewayland.drv/winewayland.so
-          echo "stub" > build/wine-ohos/dlls/wineohos.drv/wineohos.so
-          echo "stub" > build/wine-ohos/dlls/win32u/win32u.so
-          echo "stub" > build/wine-ohos/dlls/winevulkan/winevulkan.so
-          for d in ntdll kernel32 user32 gdi32 wineboot explorer; do
+          # PE mirror: x86_64-windows/*.dll 和 i386-windows/*.dll
+          for d in ntdll kernel32 user32 gdi32 wineboot explorer advapi32 comctl32 shell32 ole32; do
             mkdir -p "build/wine-ohos/dlls/$d/x86_64-windows" "build/wine-ohos/dlls/$d/i386-windows"
-            echo "stub" > "build/wine-ohos/dlls/$d/x86_64-windows/$d.dll"
-            echo "stub" > "build/wine-ohos/dlls/$d/i386-windows/$d.dll"
+            cp "$stub_dll_x64" "build/wine-ohos/dlls/$d/x86_64-windows/$d.dll"
+            cp "$stub_dll_x86" "build/wine-ohos/dlls/$d/i386-windows/$d.dll"
           done
-          for prog in wineboot explorer; do
-            mkdir -p "build/wine-ohos/programs/$prog/x86_64-windows"
-            echo "stub" > "build/wine-ohos/programs/$prog/x86_64-windows/$prog.exe"
+          # programs/*/x86_64-windows/*.exe + i386-windows/*.exe
+          for prog in wineboot explorer winecfg regedit; do
+            mkdir -p "build/wine-ohos/programs/$prog/x86_64-windows" \
+                     "build/wine-ohos/programs/$prog/i386-windows"
+            cp "$stub_exe_x64" "build/wine-ohos/programs/$prog/x86_64-windows/$prog.exe"
+            cp "$stub_exe_x86" "build/wine-ohos/programs/$prog/i386-windows/$prog.exe"
           done
 
+          # wine_server + box64
           mkdir -p build/wine_server build/box64_build
           echo "stub" > build/wine_server/wineserver
           echo "stub" > build/box64_build/box64.so
 
+          # stamps
           mkdir -p build/.stamps
           touch build/.stamps/wine-arm64-v8a
           touch build/.stamps/box64-arm64-v8a
+
+          rm -f "$stub_src" "$stub_dll_x64" "$stub_dll_x86" "$stub_exe_x64" "$stub_exe_x86"
 
           echo "---- stub wine+box64 done ----"
           du -sh build/wine-native build/wine-ohos build/wine_server build/box64_build 2>/dev/null || true
