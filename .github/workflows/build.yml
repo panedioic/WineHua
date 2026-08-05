@@ -327,6 +327,19 @@ jobs:
           echo "---- after box64 ----"
           ls -la build/ 2>&1 | head -20
           du -sh build/box64_build build/.stamps 2>/dev/null || true
+
+      # thirdparty/libffi/configure 是 autogen.sh 现场生成的非追踪产物.
+      # 首次跑由 build_deps.sh 顺带生成; deps cache 命中时该步骤被跳过,
+      # 但后续 build_native.sh 里 libffi 又要用它 → 找不到就挂.
+      # 无条件跑一次 autogen 保证它存在 (对已完成的构建无副作用).
+      - name: Ensure libffi configure regenerated
+        run: |
+          set -euxo pipefail
+          if [ ! -f thirdparty/libffi/configure ]; then
+            (cd thirdparty/libffi && ./autogen.sh)
+          fi
+          ls -la thirdparty/libffi/configure
+
       - name: Build guest graphics runtime (x64 + x86)
         run: |
           set -euxo pipefail
