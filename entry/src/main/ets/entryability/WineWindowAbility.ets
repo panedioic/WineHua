@@ -2,6 +2,7 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { WineWindowManager } from '../service/WineWindowManager';
 import { PopupWindowManager } from '../service/PopupWindowManager';
 
@@ -57,7 +58,7 @@ export default class WineWindowAbility extends UIAbility {
     try {
       //  设置 pending toplevel, WineWindow.aboutToAppear 同步读取 (loadContent 期间同步调用)
       hilog.info(DOMAIN, TAG, '[WWA] -> setPendingToplevel(%{public}d)', this.toplevelId);
-      testNapi.setPendingToplevel(this.toplevelId);
+      hgsNapi.setPendingToplevel(this.toplevelId);
 
       let mainWindow = windowStage.getMainWindowSync();
       hilog.info(DOMAIN, TAG, '[WWA] mainWindow=%{public}s', mainWindow ? 'ok' : 'NULL');
@@ -72,7 +73,7 @@ export default class WineWindowAbility extends UIAbility {
       // 注册主窗口 id: 游戏相对模式锁光标 (LockCursor) 用
       // [WINID] WWA 主窗口身份打点 (对照 WMS win NNN 归属)
       hilog.info(DOMAIN, TAG, '[WWA] mainWindow id=%{public}d', mainWindow.getWindowProperties().id);
-      testNapi.registerHostWindow(mainWindow.getWindowProperties().id);
+      hgsNapi.registerHostWindow(mainWindow.getWindowProperties().id);
       // 注册 WindowStage 引用 (popup 子窗口创建入口)
       WineWindowManager.getInstance().registerWindowStage(this.toplevelId, windowStage);
 
@@ -90,7 +91,7 @@ export default class WineWindowAbility extends UIAbility {
         } else if (data.reason === window.RectChangeReason.DRAG_END) {
           mgr.setResizeDragging(this.toplevelId, false);
           try {
-            testNapi.notifyToplevelResizeEnd(this.toplevelId);
+            hgsNapi.notifyToplevelResizeEnd(this.toplevelId);
           } catch (e) {
             hilog.warn(DOMAIN, TAG, '[WWA] #%{public}d notifyToplevelResizeEnd fail: %{public}s',
               this.toplevelId, JSON.stringify(e));
@@ -116,10 +117,10 @@ export default class WineWindowAbility extends UIAbility {
           this.cleanup();
         } else if (eventType === window.WindowEventType.WINDOW_SHOWN) {
           hilog.info(DOMAIN, TAG, '[WWA] #%{public}d  WINDOW_SHOWN → resume input', this.toplevelId);
-          try { testNapi.setToplevelVisible(this.toplevelId, true); } catch (_) {}
+          try { hgsNapi.setToplevelVisible(this.toplevelId, true); } catch (_) {}
         } else if (eventType === window.WindowEventType.WINDOW_HIDDEN) {
           hilog.info(DOMAIN, TAG, '[WWA] #%{public}d  WINDOW_HIDDEN → suppress input', this.toplevelId);
-          try { testNapi.setToplevelVisible(this.toplevelId, false); } catch (_) {}
+          try { hgsNapi.setToplevelVisible(this.toplevelId, false); } catch (_) {}
         }
       });
 
@@ -193,14 +194,14 @@ export default class WineWindowAbility extends UIAbility {
     hilog.info(DOMAIN, TAG, '[WWA]  cleanup tl=%{public}d START: sendToplevelClose -> destroyToplevel -> unregisterAbility',
       this.toplevelId);
     try {
-      testNapi.sendToplevelClose(this.toplevelId);
+      hgsNapi.sendToplevelClose(this.toplevelId);
       hilog.info(DOMAIN, TAG, '[WWA] cleanup tl=%{public}d: sendToplevelClose done', this.toplevelId);
     } catch (e) {
       hilog.error(DOMAIN, TAG, '[WWA] ERR cleanup sendToplevelClose EXCEPTION tl=%{public}d: %{public}s',
         this.toplevelId, JSON.stringify(e));
     }
     try {
-      testNapi.destroyToplevel(this.toplevelId);
+      hgsNapi.destroyToplevel(this.toplevelId);
       hilog.info(DOMAIN, TAG, '[WWA] cleanup tl=%{public}d: destroyToplevel done', this.toplevelId);
     } catch (e) {
       hilog.error(DOMAIN, TAG, '[WWA] ERR cleanup destroyToplevel EXCEPTION tl=%{public}d: %{public}s',

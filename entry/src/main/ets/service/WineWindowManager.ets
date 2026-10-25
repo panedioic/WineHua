@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { pointer } from '@kit.InputKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { PopupWindowManager } from './PopupWindowManager';
 import { ModalWindowManager } from './ModalWindowManager';
 import { FusionWindowManager } from './FusionWindowManager';
@@ -160,7 +161,7 @@ export class WineWindowManager {
       explicitMode : savedMode;
     this.isDesktopMode = isPhone || effectiveMode === 'virtual';
     this.desktopSeparateWindow = this.isDesktopMode && !isPhone && deviceInfo.deviceType !== 'tablet';
-    testNapi.setDesktopMode(this.isDesktopMode);
+    hgsNapi.setDesktopMode(this.isDesktopMode);
     hilog.info(DOMAIN, TAG,
       '[MW] mode policy: type=%{public}s → %{public}s (separateWindow=%{public}s explicit=%{public}s)',
       deviceInfo.deviceType,
@@ -214,7 +215,7 @@ export class WineWindowManager {
       this.scaleBoost = 2.0 / this.displayScale;  // 使 effectiveScale = 2.0
       hilog.info(DOMAIN, TAG, '[MW] display %{public}dx%{public}d deviceDPI=%{public}s boost=%{public}s -> effective=2.0',
         d.width, d.height, this.displayScale.toFixed(2), this.scaleBoost.toFixed(2));
-      testNapi.setDisplayScale(this.displayScale * this.scaleBoost);
+      hgsNapi.setDisplayScale(this.displayScale * this.scaleBoost);
 
       // Wine 输出尺寸: 沉浸模式下 avoid area 为 0, 直接用显示尺寸
       const s = this.displayScale * this.scaleBoost;
@@ -222,16 +223,16 @@ export class WineWindowManager {
       const outH = Math.round(d.height / s);
       hilog.info(DOMAIN, TAG, '[MW] display %{public}dx%{public}d → output %{public}dx%{public}d',
         d.width, d.height, outW, outH);
-      testNapi.setOutputSize(outW, outH);
+      hgsNapi.setOutputSize(outW, outH);
     } catch (_) {
       this.displayScale = 1.61;
       this.scaleBoost = 2.0 / 1.61;
       hilog.warn(DOMAIN, TAG, '[MW] display query failed, using displayScale=1.61 boost=1.24');
-      testNapi.setDisplayScale(this.displayScale * this.scaleBoost);
+      hgsNapi.setDisplayScale(this.displayScale * this.scaleBoost);
     }
 
     hilog.info(DOMAIN, TAG, '[MW] registering toplevel callback...');
-    testNapi.setToplevelCallback((id: number, event: string, data: string) => {
+    hgsNapi.setToplevelCallback((id: number, event: string, data: string) => {
       hilog.info(DOMAIN, TAG, '[MW]  cb toplevel #%{public}d event=%{public}s data=%{public}s',
         id, event, data);
       this.onToplevelEvent(id, event, data);
@@ -244,9 +245,9 @@ export class WineWindowManager {
     if (this.mainWindow) {
       // [WINID] 宿主主窗口 (Index) 身份: WMS 日志 "parent 312" 的物理父窗口
       hilog.info(DOMAIN, TAG, '[MW] host mainWindow id=%{public}d', this.mainWindow.getWindowProperties().id);
-      testNapi.registerHostWindow(this.mainWindow.getWindowProperties().id);
+      hgsNapi.registerHostWindow(this.mainWindow.getWindowProperties().id);
     }
-    testNapi.setPointerLockCallback((locked: boolean, fromToplevel: number) => {
+    hgsNapi.setPointerLockCallback((locked: boolean, fromToplevel: number) => {
       // 记录 wine 真实锁定请求与来源 toplevel (不受门禁过滤), 再由
       // applyPointerVisibility 按展示形态 + 来源决定是否 setPointerVisible —
       // 悬浮窗态抑制; 完整桌面态: 桌面 root surface (shell 自身) 也抑制, 仅
@@ -654,7 +655,7 @@ export class WineWindowManager {
             // 布局列表 (idx 0 = 最上层) — 对照 335/336 的 rect 排位
             setTimeout(() => {
               try {
-                testNapi.dumpWindowLayout(0);
+                hgsNapi.dumpWindowLayout(0);
               } catch (_) { /* ignore */ }
             }, 3000);
           }
@@ -969,7 +970,7 @@ export class WineWindowManager {
       this.entries.delete(id);
       // 通知 Wine 窗口创建失败
       hilog.info(DOMAIN, TAG, '[MW] -> sendToplevelClose #%{public}d (fail recovery)', id);
-      testNapi.sendToplevelClose(id);
+      hgsNapi.sendToplevelClose(id);
     });
   }
 
@@ -995,7 +996,7 @@ export class WineWindowManager {
     if (!this.mainWindowStage) {
       hilog.error(DOMAIN, TAG, '[MW] FATAL: no mainWindowStage, cannot start fusion subwindow #%{public}d', id);
       this.entries.delete(id);
-      testNapi.sendToplevelClose(id);
+      hgsNapi.sendToplevelClose(id);
       return;
     }
 
@@ -1007,7 +1008,7 @@ export class WineWindowManager {
       e.starting = false;
       this.registerWindow(winId, subWin);
       // 锁光标 (相对模式) 的 host window: PC 每窗 Ability 都注册, 这里等效
-      try { testNapi.registerHostWindow(subWin.getWindowProperties().id); } catch (_) { /* ignore */ }
+      try { hgsNapi.registerHostWindow(subWin.getWindowProperties().id); } catch (_) { /* ignore */ }
       // 拖动/系统 resize → popup 实时重新定位 (画面跟随主窗, 不再拖后瞬移)
       try {
         subWin.on('windowRectChange', () => {
@@ -1029,7 +1030,7 @@ export class WineWindowManager {
       e.starting = false;
       this.entries.delete(id);
       hilog.info(DOMAIN, TAG, '[MW] startFusionSubWindow #%{public}d failed → sendToplevelClose', id);
-      testNapi.sendToplevelClose(id);
+      hgsNapi.sendToplevelClose(id);
     });
   }
 
@@ -1097,7 +1098,7 @@ export class WineWindowManager {
     if (this.fusionUsesSubWindow() && FusionWindowManager.getInstance().has(id)) {
       hilog.info(DOMAIN, TAG, '[MW] onToplevelDestroyed #%{public}d: destroy fusion subwindow', id);
       FusionWindowManager.getInstance().destroy(id);
-      testNapi.destroyToplevel(id);
+      hgsNapi.destroyToplevel(id);
       this.unregisterAbility(id);
       return;
     }
@@ -1109,7 +1110,7 @@ export class WineWindowManager {
       return;
     }
     hilog.info(DOMAIN, TAG, '[MW] -> destroyToplevel #%{public}d', id);
-    testNapi.destroyToplevel(id);
+    hgsNapi.destroyToplevel(id);
     const ctx = this.entries.get(id)?.ctx;
     if (ctx) {
       hilog.info(DOMAIN, TAG, '[MW] -> terminateSelf #%{public}d', id);

@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { WineWindowManager } from '../service/WineWindowManager';
 import { OH2EVDEV } from '../common/KeyMap';
 import { mapMouseButton } from '../common/MouseMap';
@@ -11,7 +12,7 @@ class DesktopController extends XComponentController {
     const rootId = WineWindowManager.getInstance().getDesktopRootId();
     hilog.info(DOMAIN, 'LIFE', '[XComp] onSurfaceCreated rootId=%{public}d surfaceId=%{public}s', rootId, surfaceId);
     if (rootId > 0) {
-      try { testNapi.createRenderer(rootId, BigInt(surfaceId)); } catch (_) {}
+      try { hgsNapi.createRenderer(rootId, BigInt(surfaceId)); } catch (_) {}
     }
   }
   onSurfaceChanged(surfaceId: string, rect: SurfaceRect): void {
@@ -19,10 +20,10 @@ class DesktopController extends XComponentController {
     hilog.info(DOMAIN, 'LIFE', '[XComp] onSurfaceChanged rootId=%{public}d %{public}dx%{public}d', rootId, rect.surfaceWidth, rect.surfaceHeight);
     if (rootId > 0) {
       try {
-        testNapi.resizeRenderer(rootId, rect.surfaceWidth, rect.surfaceHeight);
+        hgsNapi.resizeRenderer(rootId, rect.surfaceWidth, rect.surfaceHeight);
         // 统一经 getEffectiveScale, 不再硬编码 2.0
         const s = WineWindowManager.getInstance().getEffectiveScale();
-        testNapi.notifyToplevelResize(rootId,
+        hgsNapi.notifyToplevelResize(rootId,
           Math.round(rect.surfaceWidth / s), Math.round(rect.surfaceHeight / s));
       } catch (_) {}
     }
@@ -31,7 +32,7 @@ class DesktopController extends XComponentController {
     const rootId = WineWindowManager.getInstance().getDesktopRootId();
     hilog.warn(DOMAIN, 'LIFE', '[XComp] onSurfaceDestroyed rootId=%{public}d', rootId);
     if (rootId > 0) {
-      try { testNapi.destroyRenderer(rootId); } catch (_) {}
+      try { hgsNapi.destroyRenderer(rootId); } catch (_) {}
     }
   }
 }
@@ -100,7 +101,7 @@ struct DesktopPage {
             if (this.touchPending || this.isDragging) {
               if (this.isDragging) {
                 const btnLeft = mapMouseButton(1);
-                testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
+                hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
               }
               this.touchPending = false;
               this.isDragging = false;
@@ -122,7 +123,7 @@ struct DesktopPage {
               this.twoFingerLastMidY = midY;
               this.twoFingerAccumY = 0;
               this.twoFingerAccumX = 0;
-              this.twoFingerTl = testNapi.findToplevelAt(midX, midY) as number ?? 0;
+              this.twoFingerTl = hgsNapi.findToplevelAt(midX, midY) as number ?? 0;
               this.scrollLogCounter = 0;
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] SCROLL-START tl=%{public}d fingers=%{public}d',
                 this.twoFingerTl, ev.touches.length);
@@ -137,7 +138,7 @@ struct DesktopPage {
                 // 垂直滚动
                 while (Math.abs(this.twoFingerAccumY) >= DesktopPage.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumY > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.twoFingerTl, 0, sign, DesktopPage.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.twoFingerTl, 0, sign, DesktopPage.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumY -= sign * DesktopPage.SCROLL_STEP_PX;
                   if (++this.scrollLogCounter % 5 === 0) {
                     hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] SCROLL-V tl=%{public}d',
@@ -147,7 +148,7 @@ struct DesktopPage {
                 // 水平滚动
                 while (Math.abs(this.twoFingerAccumX) >= DesktopPage.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumX > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.twoFingerTl, 1, sign, DesktopPage.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.twoFingerTl, 1, sign, DesktopPage.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumX -= sign * DesktopPage.SCROLL_STEP_PX;
                 }
               }
@@ -173,13 +174,13 @@ struct DesktopPage {
 
           if (ev.type === TouchType.Down) {
             // 查找目标 toplevel (px,py 为物理坐标, findToplevelAt 内部通过 viewport 转逻辑坐标)
-            const tl: number = testNapi.findToplevelAt(px, py) as number;
+            const tl: number = hgsNapi.findToplevelAt(px, py) as number;
             if (tl <= 0) {
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] TOUCH skipped (no toplevel at %{public}d,%{public}d)', px, py);
               return;
             }
             hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] TOUCH tl=%{public}d px=(%{public}d,%{public}d)', tl, px, py);
-            testNapi.raiseToplevel(tl);
+            hgsNapi.raiseToplevel(tl);
             // 进入 PENDING 状态: 暂不发送事件, 等判定长按/拖拽/点击
             this.touchPending = true;
             this.isDragging = false;
@@ -205,11 +206,11 @@ struct DesktopPage {
               this.lastTapTime = 0;
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-START tl=%{public}d px=(%{public}d,%{public}d) dist=%{public}d',
                 this.pendingTl, px, py, dist);
-              testNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-              testNapi.sendPointerEvent(this.pendingTl, MouseAction.Move, px, py, btnLeft);
+              hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+              hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Move, px, py, btnLeft);
             } else if (this.isDragging) {
               // 拖拽移动: 持续发送 Motion
-              testNapi.sendPointerEvent(this.pendingTl, MouseAction.Move, px, py, 0);
+              hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Move, px, py, 0);
               if (++this.motionLogCounter % 10 === 0) {
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-MOVE tl=%{public}d px=(%{public}d,%{public}d) frame=%{public}d',
                   this.pendingTl, px, py, this.motionLogCounter);
@@ -223,7 +224,7 @@ struct DesktopPage {
               const btnLeft = mapMouseButton(1);
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-END tl=%{public}d px=(%{public}d,%{public}d)',
                 this.pendingTl, px, py);
-              testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, px, py, btnLeft);
+              hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, px, py, btnLeft);
               this.isDragging = false;
 
             } else if (this.touchPending) {
@@ -237,8 +238,8 @@ struct DesktopPage {
                 this.lastTapTime = 0; // 长按打断双击序列
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] LONGPRESS->RIGHTCLICK tl=%{public}d elapsed=%{public}dms px=(%{public}d,%{public}d)',
                   this.pendingTl, elapsed, this.pendingPx, this.pendingPy);
-                testNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
-                testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
+                hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
+                hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
               } else {
                 // 短按 → 左键 或 双击
                 const btnLeft = mapMouseButton(1);
@@ -252,14 +253,14 @@ struct DesktopPage {
                   // 第二次点击 (Press+Release) 构成完整的双击序列,
                   // 避免总共 3 次点击导致 explorer 同时触发"打开"和"重命名"
                   this.lastTapTime = 0;
-                  testNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
-                  testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
+                  hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
+                  hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
                   hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DOUBLE-TAP tl=%{public}d px=(%{public}d,%{public}d)',
                     this.pendingTl, this.lastTapPx, this.lastTapPy);
                 } else {
                   // 单击
-                  testNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-                  testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
+                  hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+                  hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
                   this.lastTapTime = now;
                   this.lastTapPx = this.pendingPx;
                   this.lastTapPy = this.pendingPy;
@@ -275,7 +276,7 @@ struct DesktopPage {
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] CANCEL-DRAG tl=%{public}d px=(%{public}d,%{public}d)',
                 this.pendingTl, px, py);
               const btnLeft = mapMouseButton(1);
-              testNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, px, py, btnLeft);
+              hgsNapi.sendPointerEvent(this.pendingTl, MouseAction.Release, px, py, btnLeft);
             } else {
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] CANCEL tl=%{public}d (no event sent)', this.pendingTl);
             }
@@ -313,14 +314,14 @@ struct DesktopPage {
             // (跨窗口 enter/leave 由注入层 ACT_MOVE 的焦点判定处理)
             let tl = this.leftBtnTl || this.rightBtnTl || this.midBtnTl;
             if (tl <= 0) {
-              tl = testNapi.findToplevelAt(px, py) as number;
+              tl = hgsNapi.findToplevelAt(px, py) as number;
               if (tl <= 0) return;
             }
             if (++this.hoverLogCounter % 120 === 0) {
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-MOVE tl=%{public}d px=(%{public}d,%{public}d) n=%{public}d',
                 tl, px, py, this.hoverLogCounter);
             }
-            testNapi.sendPointerEvent(tl, MouseAction.Move, px, py, 0, ev.rawDeltaX, ev.rawDeltaY);
+            hgsNapi.sendPointerEvent(tl, MouseAction.Move, px, py, 0, ev.rawDeltaX, ev.rawDeltaY);
             return;
           }
           if (ev.action !== MouseAction.Press && ev.action !== MouseAction.Release) return;
@@ -339,23 +340,23 @@ struct DesktopPage {
               // (其后续 Move/Up 会被 mouseLeftActive 拦截, 不会双发)
               this.touchPending = false;
               this.isDragging = false;
-              const tl: number = testNapi.findToplevelAt(px, py) as number;
+              const tl: number = hgsNapi.findToplevelAt(px, py) as number;
               if (tl <= 0) {
                 this.leftBtnTl = 0;
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-LEFT skipped (no toplevel at %{public}d,%{public}d)', px, py);
                 return;
               }
               this.leftBtnTl = tl;
-              testNapi.raiseToplevel(tl);
+              hgsNapi.raiseToplevel(tl);
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-LEFT press tl=%{public}d px=(%{public}d,%{public}d)', tl, px, py);
-              testNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btnLeft, 0, 0, true);
+              hgsNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btnLeft, 0, 0, true);
             } else {
               if (this.leftBtnTl <= 0) {
                 this.mouseLeftActive = false;
                 return;
               }
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-LEFT release tl=%{public}d px=(%{public}d,%{public}d)', this.leftBtnTl, px, py);
-              testNapi.sendPointerEvent(this.leftBtnTl, MouseAction.Release, px, py, btnLeft);
+              hgsNapi.sendPointerEvent(this.leftBtnTl, MouseAction.Release, px, py, btnLeft);
               this.leftBtnTl = 0;
               this.mouseLeftActive = false;
             }
@@ -369,21 +370,21 @@ struct DesktopPage {
           const btnCode = mapMouseButton(isRight ? 2 : 4);
           const btnName = isRight ? 'RIGHT' : 'MIDDLE';
           if (ev.action === MouseAction.Press) {
-            const tl: number = testNapi.findToplevelAt(px, py) as number;
+            const tl: number = hgsNapi.findToplevelAt(px, py) as number;
             if (tl <= 0) {
               if (isRight) this.rightBtnTl = 0; else this.midBtnTl = 0;
               hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-%{public}s skipped (no toplevel at %{public}d,%{public}d)', btnName, px, py);
               return;
             }
             if (isRight) this.rightBtnTl = tl; else this.midBtnTl = tl;
-            testNapi.raiseToplevel(tl);
+            hgsNapi.raiseToplevel(tl);
             hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-%{public}s press tl=%{public}d px=(%{public}d,%{public}d)', btnName, tl, px, py);
-            testNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btnCode, 0, 0, true);
+            hgsNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btnCode, 0, 0, true);
           } else {
             const btnTl = isRight ? this.rightBtnTl : this.midBtnTl;
             if (btnTl <= 0) return;
             hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] MOUSE-%{public}s release tl=%{public}d px=(%{public}d,%{public}d)', btnName, btnTl, px, py);
-            testNapi.sendPointerEvent(btnTl, MouseAction.Release, px, py, btnCode);
+            hgsNapi.sendPointerEvent(btnTl, MouseAction.Release, px, py, btnCode);
             if (isRight) this.rightBtnTl = 0; else this.midBtnTl = 0;
           }
         } catch (e) {
@@ -398,7 +399,7 @@ struct DesktopPage {
         ev.stopPropagation();
         const code = OH2EVDEV[ev.keyCode] ?? 0;
         if (code <= 0) return;
-        testNapi.sendKeyEvent(rootId, code, ev.type === KeyType.Down);
+        hgsNapi.sendKeyEvent(rootId, code, ev.type === KeyType.Down);
       })
 
       // ── 滚轮事件 ──
@@ -410,9 +411,9 @@ struct DesktopPage {
         const vert = ev.getVerticalAxisValue();
         const horiz = ev.getHorizontalAxisValue();
         const step = ev.scrollStep ?? 0;
-        const tl: number = testNapi.findToplevelAt(wpx, wpy) as number;
-        if (vert !== 0) testNapi.sendScrollEvent(tl, 0, vert, step, wpx, wpy);
-        if (horiz !== 0) testNapi.sendScrollEvent(tl, 1, horiz, step, wpx, wpy);
+        const tl: number = hgsNapi.findToplevelAt(wpx, wpy) as number;
+        if (vert !== 0) hgsNapi.sendScrollEvent(tl, 0, vert, step, wpx, wpy);
+        if (horiz !== 0) hgsNapi.sendScrollEvent(tl, 1, horiz, step, wpx, wpy);
       })
     }
     .width('100%').height('100%').backgroundColor('#000')

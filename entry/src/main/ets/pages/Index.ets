@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
@@ -68,7 +69,7 @@ struct Index {
 
   // 注册 C++ 侧激活回调: active=1 → attach 弹键盘, active=0 → 收起
   private setupIme(): void {
-    testNapi.setImeCallback((active: number, x: number, y: number, w: number, h: number) => {
+    hgsNapi.setImeCallback((active: number, x: number, y: number, w: number, h: number) => {
       hilog.info(DOMAIN, 'IME-TEST', '[cb] active=%{public}d rect=[%{public}d,%{public}d %{public}dx%{public}d]',
         active, x, y, w, h);
       if (active === 1) {
@@ -106,22 +107,22 @@ struct Index {
         // attach 成功后注册事件 (12800009 detached 说明 on() 须在绑定后注册)
         controller.on('insertText', (text: string) => {
           hilog.info(DOMAIN, 'IME-TEST', '[insertText] "%{public}s"', text);
-          testNapi.sendImeCommit(text);   // 提交文本 → Wine commit_string
+          hgsNapi.sendImeCommit(text);   // 提交文本 → Wine commit_string
         });
         controller.on('deleteLeft', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteLeft] len=%{public}d', len);
-          testNapi.imeBackspace();        // 退格 → Wine KEY_BACKSPACE
+          hgsNapi.imeBackspace();        // 退格 → Wine KEY_BACKSPACE
         });
         controller.on('deleteRight', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteRight] len=%{public}d', len);
-          testNapi.imeBackspace();
+          hgsNapi.imeBackspace();
         });
         controller.on('sendKeyboardStatus', (status: inputMethod.KeyboardStatus) => {
           hilog.info(DOMAIN, 'IME-TEST', '[keyboardStatus] %{public}d (NONE=0 HIDE=1 SHOW=2)', status);
         });
         controller.on('setPreviewText', (text: string, range: inputMethod.Range) => {
           hilog.info(DOMAIN, 'IME-TEST', '[previewText] "%{public}s" range=[%{public}d,%{public}d]', text, range.start, range.end);
-          testNapi.sendImePreedit(text, range.start, range.end);  // 预上屏 → Wine preedit_string
+          hgsNapi.sendImePreedit(text, range.start, range.end);  // 预上屏 → Wine preedit_string
         });
         // 回车补齐在 WineWindow.ets onKeyEvent 统一兜底 (系统吞 KeyDown 只派
         // KeyUp 时补发 down+up, 覆盖 IME 激活/非激活所有场景), 此处只留日志

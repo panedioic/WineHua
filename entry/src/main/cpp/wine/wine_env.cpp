@@ -1,10 +1,10 @@
+#include "seam/registry.h"
 #include "wine_env.h"
 #include "wine_constants.h"
 #include "audio/audio_broker.h"
 #include "audio_ipc_protocol.h"
 #include "env_spec.h"
 #include "graphics/graphics_broker.h"
-#include "compositor/wayland_server.h"
 #include "input/controller/controller_runtime.h"
 
 #include <unistd.h>
@@ -68,8 +68,8 @@ std::vector<std::string> BuildWineEnv(const std::string& sockDir,
     }
     // Start the WHGP socket before spawning Wine and keep its contract near
     // the front of the NCP environment list.
-    winehua::controller::EnsureBridgeForWineLaunch(prefixDir);
-    winehua::controller::AppendWineGamepadEnv(env);
+    hgs::seam::GetSessionControl().EnsureBridgeForWineLaunch(prefixDir);
+    hgs::seam::GetSessionControl().AppendWineGamepadEnv(env);
     // locale / GStreamer 插件路径。WINEDEBUG 不在此注入: 本列表经 __env 通道
     // 下发, 在 wine 侧晚于 setup_wine_env 应用, 会盖掉 select_winedebug_profile
     // 的选择 — wine 进程 WINEDEBUG 的唯一决策点是 wine_child.cpp。
@@ -104,12 +104,12 @@ std::vector<std::string> BuildWineEnv(const std::string& sockDir,
     // 告知 winewayland.drv 当前是桌面模式还是独立窗口模式
     // NOTE: 桌面模式下 wine_child.cpp 也会通过 __winehua_desktop__ token 设置同值（冗余保险）
     env.push_back(std::string("WINEHUA_DESKTOP_MODE=") +
-                  (WaylandServer::GetInstance()->IsDesktopMode() ? "1" : "0"));
+                  (hgs::seam::GetSessionControl().IsDesktopMode() ? "1" : "0"));
     // WINEHUA_SIMULATE_RESOLUTION: win32u per-process 模拟 ChangeDisplaySettings
     // (记录游戏主动 CDS 请求的分辨率, 查询时返回 — DDraw 全屏游戏依赖)。
     // 仅 PC 多窗口模式注入: Pad 模拟桌面 (RootCompositing) 由合成器缩放绘制,
     // 不需要分辨率模拟。
-    if (!WaylandServer::GetInstance()->IsDesktopMode())
+    if (!hgs::seam::GetSessionControl().IsDesktopMode())
         env.push_back("WINEHUA_SIMULATE_RESOLUTION=1");
     // 相对模式 enter 静默校准 (方向 A) 启用开关: wine 侧只在显式 "1" 时启用。
     // 默认注入 "1" (静默校准 = 默认行为, 三游戏验证通过); 排查问题时改 "0"

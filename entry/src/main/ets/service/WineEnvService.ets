@@ -2,6 +2,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
 import { ProcessService, ProcessInfo } from './ProcessService';
@@ -348,7 +349,8 @@ export class WineEnvService {
 
     this.hasRawfileWineData = this.detectRawfileWineData();
 
-    testNapi.setStateCallback(this.onNativeState);
+    testNapi.setStateCallback(this.onNativeState)
+    hgsNapi.setStateCallback(this.onNativeState);
     this.refreshPrefix();
     // 会话存活镜像: 进程列表 / 桌面 root 变化 → notify 内重算 sessionAlive。
     // 这两项是"运行中/已就绪"与按钮使能的判据来源
@@ -912,7 +914,7 @@ export class WineEnvService {
     // 判定, 重启引擎会沿用旧模式 (改融合后桌面窗口依旧出现)
     WineWindowManager.getInstance().applyModePolicy();
     testNapi.setHostShadowProfile(this.perfProfile);
-    const ok: boolean = testNapi.startServer(SOCK);
+    const ok: boolean = hgsNapi.startServer(SOCK);
     if (!ok) {
       this.failInit('启动服务失败');
       return;

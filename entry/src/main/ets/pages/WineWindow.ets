@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { EVDEV_KEY_ENTER, OH2EVDEV } from '../common/KeyMap';
 import { mapMouseButton } from '../common/MouseMap';
 import { WineWindowManager } from '../service/WineWindowManager';
@@ -16,7 +17,7 @@ class WineXComponentController extends XComponentController {
     hilog.info(DOMAIN, 'WineWindow', '[Ctrl] onSurfaceCreated tl=%{public}d surfaceId=%{public}s',
       this.toplevelId, surfaceId);
     try {
-      testNapi.createRenderer(this.toplevelId, BigInt(surfaceId));
+      hgsNapi.createRenderer(this.toplevelId, BigInt(surfaceId));
     } catch (e) {
       hilog.error(DOMAIN, 'WineWindow', 'ERR onSurfaceCreated createRenderer: %{public}s', JSON.stringify(e));
     }
@@ -26,7 +27,7 @@ class WineXComponentController extends XComponentController {
     hilog.info(DOMAIN, 'WineWindow', '[Ctrl] onSurfaceChanged tl=%{public}d surfaceId=%{public}s rect=%{public}s',
       this.toplevelId, surfaceId, JSON.stringify(rect));
     try {
-      testNapi.resizeRenderer(this.toplevelId, rect.surfaceWidth, rect.surfaceHeight);
+      hgsNapi.resizeRenderer(this.toplevelId, rect.surfaceWidth, rect.surfaceHeight);
       const mgr = WineWindowManager.getInstance();
       // surface 是物理像素, Wine 需要逻辑坐标 (统一经 getEffectiveScale, 不再硬编码 2.0)
       const s = mgr.getEffectiveScale();
@@ -36,7 +37,7 @@ class WineXComponentController extends XComponentController {
       const resizing = mgr.isResizeDragging(this.toplevelId);
       hilog.info(DOMAIN, 'WineWindow', '[Ctrl] onSurfaceChanged tl=%{public}d → notifyToplevelResize(%{public}d, %{public}d, resize=%{public}s)',
         this.toplevelId, w, h, resizing ? 'yes' : 'no');
-      testNapi.notifyToplevelResize(this.toplevelId, w, h, resizing);
+      hgsNapi.notifyToplevelResize(this.toplevelId, w, h, resizing);
     } catch (e) {
       hilog.error(DOMAIN, 'WineWindow', 'ERR onSurfaceChanged resizeRenderer: %{public}s', JSON.stringify(e));
     }
@@ -46,7 +47,7 @@ class WineXComponentController extends XComponentController {
     hilog.info(DOMAIN, 'WineWindow', '[Ctrl] onSurfaceDestroyed tl=%{public}d surfaceId=%{public}s',
       this.toplevelId, surfaceId);
     try {
-      testNapi.destroyRenderer(this.toplevelId);
+      hgsNapi.destroyRenderer(this.toplevelId);
     } catch (e) {
       hilog.error(DOMAIN, 'WineWindow', 'ERR onSurfaceDestroyed destroyRenderer: %{public}s', JSON.stringify(e));
     }
@@ -102,7 +103,7 @@ struct WineWindow {
   aboutToAppear(): void {
     // 关键: aboutToAppear 是 loadContent 的同步调用, 在下一个 Ability 覆盖前读取
     // (与 PC 多窗口同款, PC 实测 OK)
-    this.toplevelId = testNapi.getCurrentToplevelId() as number;
+    this.toplevelId = hgsNapi.getCurrentToplevelId() as number;
     // 同步设置给 controller: 保证 onSurfaceCreated 拿到正确的 toplevelId
     this.controller.toplevelId = this.toplevelId;
     hilog.info(DOMAIN, 'WineWindow', 'aboutToAppear tl=%{public}d', this.toplevelId);
@@ -136,7 +137,7 @@ struct WineWindow {
               if (this.isDragging) {
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] CANCEL-DRAG tl=%{public}d px=(%{public}d,%{public}d)',
                   this.toplevelId, this.pendingPx, this.pendingPy);
-                testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
+                hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
                   this.pendingPx, this.pendingPy, mapMouseButton(1));
               } else {
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] CANCEL tl=%{public}d (no event sent)', this.toplevelId);
@@ -157,7 +158,7 @@ struct WineWindow {
               // 取消单指状态
               if (this.touchPending || this.isDragging) {
                 if (this.isDragging) {
-                  testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
+                  hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
                     this.pendingPx, this.pendingPy, mapMouseButton(1));
                 }
                 this.touchPending = false;
@@ -187,7 +188,7 @@ struct WineWindow {
                 this.twoFingerLastMidY = midY;
                 while (Math.abs(this.twoFingerAccumY) >= WineWindow.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumY > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.toplevelId, 0, sign, WineWindow.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.toplevelId, 0, sign, WineWindow.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumY -= sign * WineWindow.SCROLL_STEP_PX;
                   if (++this.scrollLogCounter % 5 === 0) {
                     hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] SCROLL-V tl=%{public}d', this.toplevelId);
@@ -195,7 +196,7 @@ struct WineWindow {
                 }
                 while (Math.abs(this.twoFingerAccumX) >= WineWindow.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumX > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.toplevelId, 1, sign, WineWindow.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.toplevelId, 1, sign, WineWindow.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumX -= sign * WineWindow.SCROLL_STEP_PX;
                 }
               }
@@ -245,8 +246,8 @@ struct WineWindow {
                 this.lastTapTime = 0; // 打断双击序列 (拖拽不是点击)
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-START tl=%{public}d px=(%{public}d,%{public}d) dist=%{public}d',
                   this.toplevelId, px, py, dist);
-                testNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-                testNapi.sendPointerEvent(this.toplevelId, MouseAction.Move, px, py, btnLeft);
+                hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+                hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Move, px, py, btnLeft);
               } else if (this.isDragging) {
                 // Pad 多窗口 (subWindow 承载): 触摸拖动 wine 标题栏 → wine 已发
                 // move 请求 (moveGrabPending), 由 OHOS startMoving 接管系统拖拽。
@@ -267,7 +268,7 @@ struct WineWindow {
                     }
                   } catch (e) { /* fall through to inject */ }
                 }
-                testNapi.sendPointerEvent(this.toplevelId, MouseAction.Move, px, py, 0);
+                hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Move, px, py, 0);
                 if (++this.motionLogCounter % 10 === 0) {
                   hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-MOVE tl=%{public}d px=(%{public}d,%{public}d) frame=%{public}d',
                     this.toplevelId, px, py, this.motionLogCounter);
@@ -284,7 +285,7 @@ struct WineWindow {
                 const btnLeft = mapMouseButton(1);
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DRAG-END tl=%{public}d px=(%{public}d,%{public}d)',
                   this.toplevelId, px, py);
-                testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, px, py, btnLeft);
+                hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, px, py, btnLeft);
                 this.isDragging = false;
               } else if (this.touchPending) {
                 this.touchPending = false;
@@ -295,8 +296,8 @@ struct WineWindow {
                   this.lastTapTime = 0; // 长按打断双击序列
                   hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] LONGPRESS->RIGHTCLICK tl=%{public}d elapsed=%{public}dms px=(%{public}d,%{public}d)',
                     this.toplevelId, elapsed, this.pendingPx, this.pendingPy);
-                  testNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
-                  testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
+                  hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
+                  hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
                 } else {
                   // 短按 → 左键 或 双击
                   const btnLeft = mapMouseButton(1);
@@ -307,13 +308,13 @@ struct WineWindow {
                   if (isDoubleTap) {
                     // 双击: 第一次点击已由上一个单击路径发出, 这里只补发第二次
                     this.lastTapTime = 0;
-                    testNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
-                    testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
                     hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] DOUBLE-TAP tl=%{public}d px=(%{public}d,%{public}d)',
                       this.toplevelId, this.lastTapPx, this.lastTapPy);
                   } else {
-                    testNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-                    testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
                     this.lastTapTime = now;
                     this.lastTapPx = this.pendingPx;
                     this.lastTapPy = this.pendingPy;
@@ -340,12 +341,12 @@ struct WineWindow {
           if (vert !== 0) {
             hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] SCROLL tl=%{public}d vert=%{public}d step=%{public}d px=(%{public}d,%{public}d)',
               this.toplevelId, Math.round(vert), step, Math.round(px), Math.round(py));
-            testNapi.sendScrollEvent(this.toplevelId, 0, vert, step, px, py);
+            hgsNapi.sendScrollEvent(this.toplevelId, 0, vert, step, px, py);
           }
           if (horiz !== 0) {
             hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] SCROLL tl=%{public}d horiz=%{public}d step=%{public}d px=(%{public}d,%{public}d)',
               this.toplevelId, Math.round(horiz), step, Math.round(px), Math.round(py));
-            testNapi.sendScrollEvent(this.toplevelId, 1, horiz, step, px, py);
+            hgsNapi.sendScrollEvent(this.toplevelId, 1, horiz, step, px, py);
           }
         })
     }
@@ -397,7 +398,7 @@ struct WineWindow {
         // 竞态: 合成 touch 可能已先进 DRAG 并注入 Press → 补 Release 配对
         // (否则 Wine 收到无配对的 Press, 左键悬挂; PENDING 未注入过, 无需补)
         if (this.isDragging) {
-          testNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
+          hgsNapi.sendPointerEvent(this.toplevelId, MouseAction.Release,
             this.pendingPx, this.pendingPy, mapMouseButton(1));
         }
         // 双指滚动中按鼠标: twoFingerActive 也须清除 — 否则合成 touch 被
@@ -428,7 +429,7 @@ struct WineWindow {
         rawDx *= s;
         rawDy *= s;
       }
-      testNapi.sendPointerEvent(this.toplevelId, event.action, px, py, btn, rawDx, rawDy, true);
+      hgsNapi.sendPointerEvent(this.toplevelId, event.action, px, py, btn, rawDx, rawDy, true);
     })
 
     // -- 键盘事件 --
@@ -453,10 +454,10 @@ struct WineWindow {
           this.lastEnterDownTs = Date.now();
         } else if (Date.now() - this.lastEnterDownTs > WineWindow.ENTER_SYNTH_WINDOW_MS) {
           hilog.info(DOMAIN, 'KBD-PIPE', '[ArkTS] ENTER SYNTH down (missing down)');
-          testNapi.sendKeyEvent(this.toplevelId, EVDEV_KEY_ENTER, true);
+          hgsNapi.sendKeyEvent(this.toplevelId, EVDEV_KEY_ENTER, true);
         }
       }
-      testNapi.sendKeyEvent(this.toplevelId, evdevCode, pressed);
+      hgsNapi.sendKeyEvent(this.toplevelId, evdevCode, pressed);
     })
 
     .onAreaChange((_o: Area, n: Area) => {

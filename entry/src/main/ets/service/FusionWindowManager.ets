@@ -1,6 +1,7 @@
 import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 
 const DOMAIN = 0x0000;
 const TAG = 'FusionWM';
@@ -102,7 +103,7 @@ export class FusionWindowManager {
 
     // 与 WineWindow/ModalWindow 相同: aboutToAppear 同步读 pending toplevelId
     // (与 PC 同款 FIFO, PC 实测 OK)
-    testNapi.setPendingToplevel(tl);
+    hgsNapi.setPendingToplevel(tl);
 
     this.hostStage.createSubWindowWithOptions(`wine_fusion_${tl}`, {
       title: '',
@@ -149,7 +150,7 @@ export class FusionWindowManager {
         hilog.info(DOMAIN, TAG, '[FWM] #%{public}d destroy requested while creating', tl);
         // destroy-while-creating: 页面可能未执行 aboutToAppear → 清 pending 残坑
         // (不删会使后续页面出队拿到死 id, 渲染器挂错 toplevel 黑屏)
-        testNapi.cancelPendingToplevel(tl);
+        hgsNapi.cancelPendingToplevel(tl);
         this.destroy(tl);
         return;
       }
@@ -170,7 +171,7 @@ export class FusionWindowManager {
       this.updateImmersive();  // ≥1 窗口可见 → 沉浸窗口模式 (隐藏任务栏)
     }).catch((e: Error) => {
       hilog.error(DOMAIN, TAG, '[FWM] #%{public}d createSubWindow FAILED: %{public}s', tl, JSON.stringify(e));
-      testNapi.cancelPendingToplevel(tl);  // 创建失败 → 同样清残坑
+      hgsNapi.cancelPendingToplevel(tl);  // 创建失败 → 同样清残坑
       this.finishFailed(tl);
       onFail?.();
     });

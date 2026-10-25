@@ -1,4 +1,5 @@
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import smokeNapi from 'libsmoke_napi.so';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
@@ -404,7 +405,7 @@ export class SmokeRunner {
     }
     if (action.type === 'ime') {
       if (!this.lastInjectTl) return 'ime action without a prior mouse action (no focus target)';
-      testNapi.sendImeCommit(action.text ? action.text : '');
+      hgsNapi.sendImeCommit(action.text ? action.text : '');
       return '';
     }
     if (action.type === 'swipe') {
@@ -417,9 +418,9 @@ export class SmokeRunner {
       // 裸键动作（evdev 码，如 KEY_ENTER=28），发给焦点 toplevel
       if (!this.lastInjectTl) return 'key action without a prior mouse action';
       if (action.code === undefined) return 'key action missing code';
-      testNapi.sendKeyEvent(this.lastInjectTl, action.code, true);
+      hgsNapi.sendKeyEvent(this.lastInjectTl, action.code, true);
       await new Promise<void>((r) => setTimeout(r, 30));
-      testNapi.sendKeyEvent(this.lastInjectTl, action.code, false);
+      hgsNapi.sendKeyEvent(this.lastInjectTl, action.code, false);
       return '';
     }
     return this.injectMouse(action);
@@ -438,7 +439,7 @@ export class SmokeRunner {
     if (!mapped0) return 'smokeMapPoint failed (swipe)';
     const tl = this.lastInjectTl ||
       (() => {
-        const found = testNapi.findToplevelAt(mapped0.px, mapped0.py) as number;
+        const found = hgsNapi.findToplevelAt(mapped0.px, mapped0.py) as number;
         return found > 0 ? found : 0;
       })();
     if (!tl) return 'swipe without toplevel';
@@ -447,18 +448,18 @@ export class SmokeRunner {
     const stepDy: number = action.dy / steps;
     const btn = mapMouseButton(action.button === 'right' ? 2 : 1);
     if (holdBtn) {
-      testNapi.sendPointerEvent(tl, MouseAction.Press, mapped0.px, mapped0.py, btn);
+      hgsNapi.sendPointerEvent(tl, MouseAction.Press, mapped0.px, mapped0.py, btn);
       await new Promise<void>((r) => setTimeout(r, 60));
     }
     for (let i = 0; i < steps; i++) {
-      testNapi.sendPointerEvent(tl, MouseAction.Move,
+      hgsNapi.sendPointerEvent(tl, MouseAction.Move,
         mapped0.px + stepDx * (i + 1), mapped0.py + stepDy * (i + 1), 0,
         stepDx, stepDy, true);
       await new Promise<void>((r) => setTimeout(r, 20));
     }
     if (holdBtn) {
       await new Promise<void>((r) => setTimeout(r, 40));
-      testNapi.sendPointerEvent(tl, MouseAction.Release,
+      hgsNapi.sendPointerEvent(tl, MouseAction.Release,
         mapped0.px + action.dx, mapped0.py + action.dy, btn);
     }
     return '';
@@ -474,11 +475,11 @@ export class SmokeRunner {
     const sign: number = notches > 0 ? -1 : 1;
     const mapped = smokeNapi.smokeMapPoint(action.x, action.y) as PointMap | null;
     if (!mapped) return 'smokeMapPoint failed (wheel)';
-    const tl = testNapi.findToplevelAt(mapped.px, mapped.py) as number;
+    const tl = hgsNapi.findToplevelAt(mapped.px, mapped.py) as number;
     if (!tl || tl <= 0) return `no toplevel at physical (${mapped.px},${mapped.py})`;
     this.lastInjectTl = tl;
     for (let i = 0; i < absN; i++) {
-      testNapi.sendScrollEvent(tl, 0, sign, 40, mapped.px, mapped.py);
+      hgsNapi.sendScrollEvent(tl, 0, sign, 40, mapped.px, mapped.py);
       await new Promise<void>((r) => setTimeout(r, 60));
     }
     return '';
@@ -497,11 +498,11 @@ export class SmokeRunner {
       if (code < 0) return `unsupported char '${ch}' (ascii subset only)`;
       const needShift: boolean = ch >= 'A' && ch <= 'Z' || ch === '_';
       const tl: number = this.lastInjectTl;
-      if (needShift) testNapi.sendKeyEvent(tl, 42, true);  // KEY_LEFTSHIFT
-      testNapi.sendKeyEvent(tl, code, true);
+      if (needShift) hgsNapi.sendKeyEvent(tl, 42, true);  // KEY_LEFTSHIFT
+      hgsNapi.sendKeyEvent(tl, code, true);
       await new Promise<void>((r) => setTimeout(r, 30));
-      testNapi.sendKeyEvent(tl, code, false);
-      if (needShift) testNapi.sendKeyEvent(tl, 42, false);
+      hgsNapi.sendKeyEvent(tl, code, false);
+      if (needShift) hgsNapi.sendKeyEvent(tl, 42, false);
       await new Promise<void>((r) => setTimeout(r, 30));
     }
     return '';
@@ -513,18 +514,18 @@ export class SmokeRunner {
     if (!mapped) return 'smokeMapPoint failed (renderer/letterbox not ready)';
     const px: number = mapped.px;
     const py: number = mapped.py;
-    const tl = testNapi.findToplevelAt(px, py) as number;
+    const tl = hgsNapi.findToplevelAt(px, py) as number;
     if (!tl || tl <= 0) return `no toplevel at physical (${px},${py})`;
-    testNapi.raiseToplevel(tl);
+    hgsNapi.raiseToplevel(tl);
     this.lastInjectTl = tl;
     // ArkUI MouseButton: Left=1, Right=2 → evdev code
     const btn = mapMouseButton(action.button === 'right' ? 2 : 1);
     const presses: number = action.type === 'doubleClick' ? 2 : 1;
     for (let i = 0; i < presses; i++) {
       if (i > 0) await new Promise<void>((r) => setTimeout(r, 120));
-      testNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btn);
+      hgsNapi.sendPointerEvent(tl, MouseAction.Press, px, py, btn);
       await new Promise<void>((r) => setTimeout(r, 40));
-      testNapi.sendPointerEvent(tl, MouseAction.Release, px, py, btn);
+      hgsNapi.sendPointerEvent(tl, MouseAction.Release, px, py, btn);
     }
     return '';
   }

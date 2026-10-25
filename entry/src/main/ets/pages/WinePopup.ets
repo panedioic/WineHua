@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import hgsNapi from 'libhgs.so';
 import { mapMouseButton } from '../common/MouseMap';
 
 const DOMAIN = 0x0000;
@@ -17,7 +18,7 @@ class PopupXComponentController extends XComponentController {
     hilog.info(DOMAIN, 'WinePopup', '[PopupCtrl] onSurfaceCreated popup=%{public}d surfaceId=%{public}s',
       this.popupId, surfaceId);
     try {
-      testNapi.createRenderer(this.popupId, BigInt(surfaceId));
+      hgsNapi.createRenderer(this.popupId, BigInt(surfaceId));
     } catch (e) {
       hilog.error(DOMAIN, 'WinePopup', 'ERR onSurfaceCreated createRenderer: %{public}s', JSON.stringify(e));
     }
@@ -27,7 +28,7 @@ class PopupXComponentController extends XComponentController {
     hilog.info(DOMAIN, 'WinePopup', '[PopupCtrl] onSurfaceChanged popup=%{public}d rect=%{public}s',
       this.popupId, JSON.stringify(rect));
     try {
-      testNapi.resizeRenderer(this.popupId, rect.surfaceWidth, rect.surfaceHeight);
+      hgsNapi.resizeRenderer(this.popupId, rect.surfaceWidth, rect.surfaceHeight);
     } catch (e) {
       hilog.error(DOMAIN, 'WinePopup', 'ERR onSurfaceChanged resizeRenderer: %{public}s', JSON.stringify(e));
     }
@@ -36,7 +37,7 @@ class PopupXComponentController extends XComponentController {
   onSurfaceDestroyed(surfaceId: string): void {
     hilog.info(DOMAIN, 'WinePopup', '[PopupCtrl] onSurfaceDestroyed popup=%{public}d', this.popupId);
     try {
-      testNapi.destroyRenderer(this.popupId);
+      hgsNapi.destroyRenderer(this.popupId);
     } catch (e) {
       hilog.error(DOMAIN, 'WinePopup', 'ERR onSurfaceDestroyed destroyRenderer: %{public}s', JSON.stringify(e));
     }
@@ -82,7 +83,7 @@ struct WinePopup {
 
   aboutToAppear(): void {
     // loadContent 同步调用, 与 setPendingToplevel 配对 (与 PC 多窗口同款, PC 实测 OK)
-    this.popupId = testNapi.getCurrentToplevelId() as number;
+    this.popupId = hgsNapi.getCurrentToplevelId() as number;
     this.controller.popupId = this.popupId;
     hilog.info(DOMAIN, 'WinePopup', 'aboutToAppear popup=%{public}d', this.popupId);
   }
@@ -110,7 +111,7 @@ struct WinePopup {
               if (this.isDragging) {
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-CANCEL-DRAG popup=%{public}d px=(%{public}d,%{public}d)',
                   this.popupId, this.pendingPx, this.pendingPy);
-                testNapi.sendPointerEvent(this.popupId, MouseAction.Release,
+                hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release,
                   this.pendingPx, this.pendingPy, mapMouseButton(1));
               } else {
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-CANCEL popup=%{public}d (no event sent)', this.popupId);
@@ -128,7 +129,7 @@ struct WinePopup {
             if (ev.touches.length >= 2) {
               if (this.touchPending || this.isDragging) {
                 if (this.isDragging) {
-                  testNapi.sendPointerEvent(this.popupId, MouseAction.Release,
+                  hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release,
                     this.pendingPx, this.pendingPy, mapMouseButton(1));
                 }
                 this.touchPending = false;
@@ -157,7 +158,7 @@ struct WinePopup {
                 this.twoFingerLastMidY = midY;
                 while (Math.abs(this.twoFingerAccumY) >= WinePopup.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumY > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.popupId, 0, sign, WinePopup.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.popupId, 0, sign, WinePopup.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumY -= sign * WinePopup.SCROLL_STEP_PX;
                   if (++this.scrollLogCounter % 5 === 0) {
                     hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-SCROLL-V popup=%{public}d', this.popupId);
@@ -165,7 +166,7 @@ struct WinePopup {
                 }
                 while (Math.abs(this.twoFingerAccumX) >= WinePopup.SCROLL_STEP_PX) {
                   const sign = this.twoFingerAccumX > 0 ? 1 : -1;
-                  testNapi.sendScrollEvent(this.popupId, 1, sign, WinePopup.SCROLL_STEP_PX, midX, midY);
+                  hgsNapi.sendScrollEvent(this.popupId, 1, sign, WinePopup.SCROLL_STEP_PX, midX, midY);
                   this.twoFingerAccumX -= sign * WinePopup.SCROLL_STEP_PX;
                 }
               }
@@ -207,10 +208,10 @@ struct WinePopup {
                 this.lastTapTime = 0; // 打断双击序列 (拖拽不是点击)
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-DRAG-START popup=%{public}d px=(%{public}d,%{public}d) dist=%{public}d',
                   this.popupId, px, py, dist);
-                testNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-                testNapi.sendPointerEvent(this.popupId, MouseAction.Move, px, py, btnLeft);
+                hgsNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+                hgsNapi.sendPointerEvent(this.popupId, MouseAction.Move, px, py, btnLeft);
               } else if (this.isDragging) {
-                testNapi.sendPointerEvent(this.popupId, MouseAction.Move, px, py, 0);
+                hgsNapi.sendPointerEvent(this.popupId, MouseAction.Move, px, py, 0);
                 if (++this.motionLogCounter % 10 === 0) {
                   hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-DRAG-MOVE popup=%{public}d px=(%{public}d,%{public}d) frame=%{public}d',
                     this.popupId, px, py, this.motionLogCounter);
@@ -222,7 +223,7 @@ struct WinePopup {
                 const btnLeft = mapMouseButton(1);
                 hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-DRAG-END popup=%{public}d px=(%{public}d,%{public}d)',
                   this.popupId, px, py);
-                testNapi.sendPointerEvent(this.popupId, MouseAction.Release, px, py, btnLeft);
+                hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release, px, py, btnLeft);
                 this.isDragging = false;
               } else if (this.touchPending) {
                 this.touchPending = false;
@@ -233,8 +234,8 @@ struct WinePopup {
                   this.lastTapTime = 0; // 长按打断双击序列
                   hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-LONGPRESS->RIGHTCLICK popup=%{public}d elapsed=%{public}dms px=(%{public}d,%{public}d)',
                     this.popupId, elapsed, this.pendingPx, this.pendingPy);
-                  testNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
-                  testNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
+                  hgsNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnRight);
+                  hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.pendingPx, this.pendingPy, btnRight);
                 } else {
                   // 短按 → 左键 或 双击
                   const btnLeft = mapMouseButton(1);
@@ -244,13 +245,13 @@ struct WinePopup {
                                       && dist < WinePopup.DOUBLE_TAP_DIST);
                   if (isDoubleTap) {
                     this.lastTapTime = 0;
-                    testNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
-                    testNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.lastTapPx, this.lastTapPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.lastTapPx, this.lastTapPy, btnLeft);
                     hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-DOUBLE-TAP popup=%{public}d px=(%{public}d,%{public}d)',
                       this.popupId, this.lastTapPx, this.lastTapPy);
                   } else {
-                    testNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
-                    testNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.popupId, MouseAction.Press, this.pendingPx, this.pendingPy, btnLeft);
+                    hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release, this.pendingPx, this.pendingPy, btnLeft);
                     this.lastTapTime = now;
                     this.lastTapPx = this.pendingPx;
                     this.lastTapPy = this.pendingPy;
@@ -274,10 +275,10 @@ struct WinePopup {
           const horiz = event.getHorizontalAxisValue();
           const step = event.scrollStep ?? 0;
           if (vert !== 0) {
-            testNapi.sendScrollEvent(this.popupId, 0, vert, step, px, py);
+            hgsNapi.sendScrollEvent(this.popupId, 0, vert, step, px, py);
           }
           if (horiz !== 0) {
-            testNapi.sendScrollEvent(this.popupId, 1, horiz, step, px, py);
+            hgsNapi.sendScrollEvent(this.popupId, 1, horiz, step, px, py);
           }
         })
     }
@@ -303,7 +304,7 @@ struct WinePopup {
         this.mouseLeftActive = true;
         // 竞态: 合成 touch 可能已先进 DRAG 并注入 Press → 补 Release 配对
         if (this.isDragging) {
-          testNapi.sendPointerEvent(this.popupId, MouseAction.Release,
+          hgsNapi.sendPointerEvent(this.popupId, MouseAction.Release,
             this.pendingPx, this.pendingPy, mapMouseButton(1));
         }
         this.touchPending = false;
@@ -319,7 +320,7 @@ struct WinePopup {
         hilog.info(DOMAIN, 'CLICK-PIPE', '[ArkTS] POPUP-MOUSE popup=%{public}d action=%{public}d px=(%{public}d,%{public}d) btn=%{public}d',
           this.popupId, event.action, Math.round(px), Math.round(py), btn);
       }
-      testNapi.sendPointerEvent(this.popupId, event.action, px, py, btn, event.rawDeltaX, event.rawDeltaY, true);
+      hgsNapi.sendPointerEvent(this.popupId, event.action, px, py, btn, event.rawDeltaX, event.rawDeltaY, true);
     })
   }
 }
