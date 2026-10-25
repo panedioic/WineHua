@@ -26,7 +26,8 @@ export interface WineProgramOptions {
   workingDirectory: string;
   d3dBackend: string;
   dxvkBackend?: string;
-  presentBackend: string;
+  // 不传时 native 按 d3dBackend 派生 (DerivePresentBackend); native 侧当前无此字段
+  presentBackend?: string;
 }
 export interface WineProcessHandle {
   found: boolean;
