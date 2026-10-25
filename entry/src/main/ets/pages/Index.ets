@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import testNapi from 'libentry.so';
+import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { inputMethod } from '@kit.IMEKit';
@@ -10,7 +11,7 @@ import { WineWindowManager } from '../service/WineWindowManager';
 import { DesktopModeService, MODE_VIRTUAL, MODE_FUSION } from '../service/DesktopModeService';
 // [[SMOKE]] 合并到 main-ui: 删本行与侧边栏的 <SmokeDevPanel /> 调用
 import { SmokeDevPanel } from '../smoke/SmokeDevPanel';
-import { HelloWorld } from 'hgs';
+import { HelloWorld, openHgsWindow } from 'hgs';
 
 const DOMAIN = 0x0000;
 
@@ -442,7 +443,14 @@ struct Index {
         HelloWorld()
           .height(56).width('100%')
           .borderRadius(8).backgroundColor('#1d2430')
-          .margin({ bottom: 12 })
+          .margin({ bottom: 8 })
+        Row() {
+          Button('打开 HGS 窗口')
+            .layoutWeight(1).height(34)
+            .backgroundColor('#2a4a6a')
+            .onClick(() => openHgsWindow(getContext(this) as common.UIAbilityContext))
+        }
+        .width('100%').margin({ bottom: 12 })
 
         // 图形后端互斥单选: DXVK 2.6.2 / DXVK 1.10.3 / VKD3D 2.6 / WineD3D
         // 四选一, 高亮 .backgroundColor 判据统一走 @State backendSel (响应式)。
