@@ -7,6 +7,7 @@
   "license": "",
   "dependencies": {
     "libentry.so": "file:./src/main/cpp/types/libentry",
-    "libsmoke_napi.so": "file:./src/main/cpp/types/smoke_napi"
+    "libsmoke_napi.so": "file:./src/main/cpp/types/smoke_napi",
+    "hgs": "file:../hgs"
   }
 }
