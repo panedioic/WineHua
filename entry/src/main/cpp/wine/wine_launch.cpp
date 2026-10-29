@@ -367,7 +367,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
 
     // winebus loads during wineboot/winedevice startup, so publish the WHGP
     // socket before the first Wine process is spawned.
-    hgs::seam::GetSessionControl().EnsureBridgeForWineLaunch(p->prefixDir);
+    hgs::seam::HostSessionControl().EnsureBridgeForWineLaunch(p->prefixDir);
 
     // -- wineserver via broker --
     // broker → wine_child Main → 截获 argv[0]=="wineserver" 转入本体
@@ -378,7 +378,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
         // 的服务进程, env 继承自 wineserver。只注入 wineboot/explorer 链
         // (BuildSessionEnv) 时 winebus 读不到这些键, 门禁/模式全吃缺省 —
         // keyboard_legacy 兜底完全失效 (bus_ohos/bus_sdl 的 env 唯一来源)。
-        hgs::seam::GetSessionControl().AppendWineGamepadEnv(wsReq.env);
+        hgs::seam::HostSessionControl().AppendWineGamepadEnv(wsReq.env);
         const pid_t wsChildPid = winehua::Spawner::Spawn(wsReq);
         if (wsChildPid <= 0) {
             OH_LOG_ERROR(LOG_APP, "[Launch-Async] wineserver spawn FAILED");
@@ -443,7 +443,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
                          winebootStatus.c_str());
             return false;
         }
-        auto* ws = &hgs::seam::GetSessionControl();
+        auto* ws = &hgs::seam::HostSessionControl();
         ws->SetDesktopRootRecognitionEnabled(false);
         // 首启 wineboot 期间抑制窗口创建事件 (PC 窗口模式): 初始化等待窗
         // 不创建独立 OHOS 窗口 — 与 Pad 桌面模式对齐。wineboot 完成后恢复。
@@ -458,7 +458,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
                      "LC_ALL=" + p->wineLang + ".UTF-8"};
         // wineboot 阶段也加载 winebus (winedevice 由 wineserver 拉起, 可能先于
         // 本 spawn 或后于它), 键注入与 wineserver 保持一致, 模式不靠缺省。
-        hgs::seam::GetSessionControl().AppendWineGamepadEnv(wbReq.env);
+        hgs::seam::HostSessionControl().AppendWineGamepadEnv(wbReq.env);
         const pid_t childPid = winehua::Spawner::Spawn(wbReq);
         if (childPid <= 0) {
             OH_LOG_ERROR(LOG_APP, "[Launch-Async] wineboot spawn FAILED");
@@ -527,7 +527,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
         winehua::SpawnRequest wbReq{winehua::SpawnKind::Wineboot};
         wbReq.env = {"LANG=" + p->wineLang + ".UTF-8",
                      "LC_ALL=" + p->wineLang + ".UTF-8"};
-        hgs::seam::GetSessionControl().AppendWineGamepadEnv(wbReq.env);
+        hgs::seam::HostSessionControl().AppendWineGamepadEnv(wbReq.env);
         const pid_t childPid = winehua::Spawner::Spawn(wbReq);
         if (childPid <= 0) {
             OH_LOG_ERROR(LOG_APP, "[Launch-Async] wineboot --init spawn FAILED");
@@ -582,10 +582,10 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
     // -- explorer desktop shell (仅 desktop 模式) --
     PrepareDesktopSessionGraphicsEnv(*p);
 
-    if (hgs::seam::GetSessionControl().IsDesktopMode())
+    if (hgs::seam::HostSessionControl().IsDesktopMode())
     // -- explorer (Desktop 或 Pad 模式均启动, 走 broker 统一路径) --
     {
-        auto* ws = &hgs::seam::GetSessionControl();
+        auto* ws = &hgs::seam::HostSessionControl();
         ws->SetDesktopRootRecognitionEnabled(true);
         // 新桌面会话开始: 清除上次会话的桌面 shell 标记守卫, 使本次 root 出现时
         // 重新标记基础进程 (desktop + explorer 等) 为不可由用户结束。

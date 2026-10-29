@@ -419,8 +419,8 @@ static napi_value StopClient(napi_env, napi_callback_info) {
     // 会话终结统一收口 (与桌面退出同路径): 杀进程后进程级一次性状态全部
     // 复位, 下次引擎启动从冷启动基线开始 (StopAll 走 WaylandServer::Stop
     // 全量重建, 无需这里处理)
-    hgs::seam::GetSessionControl().ResetSessionState();
-    hgs::seam::GetSessionControl().ResetFirstFrame();
+    hgs::seam::HostSessionControl().ResetSessionState();
+    hgs::seam::HostSessionControl().ResetFirstFrame();
     return nullptr;
 }
 
@@ -428,7 +428,7 @@ static napi_value StopClient(napi_env, napi_callback_info) {
 static napi_value StopAll(napi_env, napi_callback_info) {
     winehua::GraphicsBroker::GetInstance().Stop();
     KillAllProcesses();
-    hgs::seam::GetSessionControl().Stop();
+    hgs::seam::HostSessionControl().Stop();
     // 会话终结信号: zombie 感知等待全部死亡后发一次 state:stopped —
     // ArkTS 重启/重置/停止编排以它为继续条件 (取代阶段1 的进程表轮询)。
     // 放在 Wayland Stop (同步 join) 之后, 保证"完全退出"判据三项齐备才发声
