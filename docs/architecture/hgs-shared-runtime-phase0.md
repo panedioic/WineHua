@@ -2,7 +2,7 @@
 
 > 最后核实：2026-11-04
 > 适用仓库：`/workspace/WineHua-root/WineHua`（外层分支 `feature/hgs-har-scaffold`），
-> hgs submodule（`main`，当前 `8f43031`）
+> hgs submodule（`main`，当前 `7255c57`）
 > 状态：**阶段 0 已完成；阶段 1 基本完成；阶段 2 W1/W2 已完成（真机待回归）**。
 > 已落地：P0.0–P0.4（公共契约 + 门面）、P1.1 NAPI canonical/回调收口、
 > P1.2 typed sink、P1.3 setProcessEnvironment、N1 原生输入、W1 窗口管理器
@@ -825,9 +825,9 @@ XComponent({
 `onLoad` 只是生命周期补挂，不是输入事件；`focusable/focusOnTouch` 是布局属性。
 这里说的“零事件”指**输入事件**（touch/mouse/axis/key），生命周期与布局属性
 仍允许保留 —— Blender 的 Index.ets 本身也保留了 `onDestroy`。
-现有 `EmptyEglView.ets:21-25` 已经用了
-`onLoad((event) => hgs.bindXComponent(event))` 的补挂模式（targetSdk 23，
-`onLoad` 自 API 18 可用），可直接复用。
+阶段 1 N1 已在 `HgsSurface.ets` 的 native 分支落地
+`onLoad((event) => hgs.bindXComponent(event, id))` 的补挂模式
+（targetSdk 23，`onLoad` 自 API 18 可用）。
 
 ### 14.2 SDK 能力核对（项目自带 SDK 已确认）
 

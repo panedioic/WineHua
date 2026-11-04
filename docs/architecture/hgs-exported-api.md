@@ -53,11 +53,10 @@ C++ 宿主 / 同进程 native 模块
 ### 1.3 ArkTS HAR（`Index.ets`）
 
 ```ts
-export { HelloWorld }        // demo
-export { EmptyEglView }      // demo / 空渲染器
-export { HgsSurface }        // 真实公共组件
-export { openHgsWindow }     // demo 入口
-export { HgsWindowAbility }  // 脚手架
+export { HgsSurface }              // 通用 surface 组件
+export { HgsWindowPage }           // 通用窗口页 (W2b)
+export { HgsWindowHostService }    // 默认 ArkTS 窗口 host (W2b)
+export { HgsAppWindowAbility }     // 通用窗口 Ability 基类 (W2b)
 ```
 
 `HgsSurface` 目前同时暴露 Wine 专用 props（`mouseMode/floating/touchpadOn/
@@ -444,12 +443,11 @@ export { HgsInputBackend, HgsWindowState, HgsWindowEventType } from './src/main/
 export type { HgsConfig, HgsWindowSpec, HgsWindowHost } from './src/main/ets/types/HgsTypes';
 
 // 过渡/兼容
-export { HgsWindowAbility } from './src/main/ets/entryability/HgsWindowAbility'; // @deprecated
-export { openHgsWindow } from './src/main/ets/window_launcher';                  // @deprecated
 ```
 
-`HelloWorld` / `EmptyEglView` 移到 `hgs/demo`，不进入主 `Index.ets`；
-阶段 2 完成迁移后删除。
+`HelloWorld` / `EmptyEglView` / `HgsWindowAbility` / `openHgsWindow`
+已删除（2026-11-04 占位清理）；`smoke/egl_renderer` 空 EGL 渲染器同步删除，
+native 路径统一由 `CreateRendererFromWindow` 建真实渲染器。
 
 ### 5.2 `HgsSurface` 公共 props
 
@@ -552,7 +550,7 @@ Wayland 线程；因此 host 实现里可以直接调 `startAbility` / `window.W
 - [ ] `attachSurface` 返回 generation；旧 `createRenderer` 仍返回 `undefined`，
       不暴露 generation。需要 generation 的宿主改用 `attachSurface`。
 - [ ] `resizeSurface/detachSurface` 的 `generation` 缺省为 0（通配），旧调用不传。
-- [ ] `bindXComponent` 第二参数可选；旧 `EmptyEglView` 一参调用不报错。
+- [ ] `bindXComponent` 第二参数可选；旧一参调用只注册 surface 回调、不建 renderer。
 - [ ] `setToplevelEventCallback` 与 `setToplevelCallback` 共用内部唯一的 typed sink；
       两者是它的两个适配器，后注册者覆盖前者并打 WARN。宿主只能选一个，
       不能指望同时订阅。
