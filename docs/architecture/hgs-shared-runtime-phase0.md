@@ -2,12 +2,13 @@
 
 > 最后核实：2026-11-04
 > 适用仓库：`/workspace/WineHua-root/WineHua`（外层分支 `feature/hgs-har-scaffold`），
-> hgs submodule（`main`，当前 `4116552`）
-> 状态：**阶段 0 已完成；阶段 1 基本完成；阶段 2 W1 已完成**。
+> hgs submodule（`main`，当前 `8f43031`）
+> 状态：**阶段 0 已完成；阶段 1 基本完成；阶段 2 W1/W2 已完成（真机待回归）**。
 > 已落地：P0.0–P0.4（公共契约 + 门面）、P1.1 NAPI canonical/回调收口、
 > P1.2 typed sink、P1.3 setProcessEnvironment、N1 原生输入、W1 窗口管理器
-> core。签名 HAP 因本机未挂载签名材料未出包，原生编译已验证。
-> 后续：N2 手势、P1.4 所有权/seam/smoke 收口、W2 默认 ArkTS host。
+> core、W2a 事件接线/NAPI、W2b 默认 ArkTS host（Service/Ability/Page）。
+> 签名 HAP 因本机未挂载签名材料未出包，原生编译已验证。
+> 后续：N2 手势、P1.4 所有权/seam/smoke 收口、W3 BetterSH 接入。
 
 ## 0. 一句话
 
@@ -703,6 +704,7 @@ docker run --rm --user 1000:1000 -e HOME=/tmp \
 | P1.3 | `setProcessEnvironment=false` 生效（不 setenv，宿主用 `ClientEnvironment`） | ✅ hgs `f433cdd` |
 | N1 | 原生输入：mouse/key/axis/focus + touch 单击；`bindXComponent(id)`；原生 renderer | ✅ hgs `0cc9e22` |
 | W1 | 窗口管理器 core：`hgs_window_*` + `FloatingWindowPolicy` + host 接口 + 单测 | ✅ hgs `4116552` |
+| W2 | 窗口管理器事件接线 + NAPI 通道 + 默认 ArkTS host（Service/Ability/Page） | ✅ hgs `9ac8214`/`8f43031` |
 | N2 | 手势状态机移植（长按/双击/双指/触控板），Native 与 ArkTS 行为对齐 | ⏳ |
 | P1.4 | `HgsInstance` 持有状态 / seam provider / smoke 移出产品库 / HgsSurface Wine 手势拆分 | ⏳ |
 
@@ -1290,7 +1292,7 @@ hgsNapi.launchClient(BOX64, [], SOCK, ..., env /* XDG_RUNTIME_DIR/WAYLAND_DISPLA
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | W1（阶段 2 前半） | `hgs_window_*` 纯 C++ core + `FloatingWindowPolicy` + host 接口 + host tests | ✅ hgs `4116552`（`hgs_window_manager_test` 46 checks） |
-| W2（阶段 2 后半） | HGS HAR 默认 ArkTS host：`HgsWindowHostService` + `HgsAppWindowAbility` + `HgsWindowPage`；事件接线 `HandleToplevelEvent` | ⏳ |
+| W2（阶段 2 后半） | HGS HAR 默认 ArkTS host：`HgsWindowHostService` + `HgsAppWindowAbility` + `HgsWindowPage`；事件接线 | ✅ hgs `9ac8214`/`8f43031`（真机待回归） |
 | W3（阶段 3） | BetterSH 接入：删 WaymonyService/ClientWindow/旧 compositor；`dataDevice=true` | ⏳ |
 | W4（阶段 4） | HarmonyBox 接入 | ⏳ |
 | W5（后续） | 策略扩展（tiling/mobile）、多显示器、窗口动画 | ⏳ |

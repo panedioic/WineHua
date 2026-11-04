@@ -130,9 +130,19 @@ int main() {
     expect_true("z-order after raise [2,1]", mgr.ZOrder() == std::vector<WindowId>{2, 1});
     expect_eq_i("host raise", host.raise, 1);
     expect_eq_i("policy raised", policyPtr->raised, 1);
+    expect_true("event raise requested",
+                events.back().type == WindowEventType::RaiseRequested);
     mgr.Focus(1);
     expect_eq_i("focused after Focus", mgr.Focused(), 1);
     expect_eq_i("policy focused", policyPtr->focused, 1);
+
+    // ---- host 焦点回执 ----
+    mgr.NotifyHostFocus(2, true);
+    expect_eq_i("focused after host focus", mgr.Focused(), 2);
+    expect_true("event focus", events.back().type == WindowEventType::FocusChanged &&
+                               events.back().focused);
+    mgr.NotifyHostFocus(2, false);
+    expect_eq_i("focused cleared by host", mgr.Focused(), 0);
 
     // ---- 标题 ----
     mgr.OnTitleChanged(1, "renamed");
