@@ -95,15 +95,18 @@ static void test_json_templates() {
 
 static void test_full_coverage() {
     // 全部枚举值都在 EventName 映射内 (编译器已保证 switch 完整性; 此处
-    // 再逐一遍历确认每个名字均为非空且长度>0)。数量随枚举演进同步
-    // (22 → 21: 8e986ffdc 移除 ArgbCreated/ArgbMove/MaskDirty)。
+    // 再逐一遍历确认每个名字均为非空且长度>0)。遍历走 kAllToplevelEvents
+    // (阶段 0 P0.1: 枚举迁入 api/hgs_events.h 后数值显式化并引入
+    // Unknown=0 哨兵, 旧 "for i<21 数值遍历" 会命中 Unknown 误报且漏掉
+    // DesktopRoot — 改为遍历表, 与枚举演进自动同步)。
     int n = 0;
-    for (uint32_t i = 0; i < 21; i++) {
-        const char* name = ToplevelEventName(static_cast<ToplevelEventType>(i));
+    for (hgs::ToplevelEventType evt : hgs::kAllToplevelEvents) {
+        const char* name = ToplevelEventName(evt);
         checks++;
         if (name == nullptr || name[0] == '\0' || strcmp(name, "unknown") == 0) {
             failures++;
-            printf("FAIL coverage enum=%u -> '%s'\n", i, name);
+            printf("FAIL coverage enum=%u -> '%s'\n",
+                   static_cast<unsigned>(evt), name);
         }
         n++;
     }
