@@ -4,7 +4,7 @@
 > 适用仓库：`/workspace/WineHua-root/WineHua/hgs`（submodule `main`）
 > 状态：**阶段 0 已实施；阶段 1 导出面已落地**（P1.1 canonical 导出 +
 > 旧名弃用转发 + `.d.ts` 补齐；P1.3 setProcessEnvironment；N1 原生输入）。
-> 阶段 2 窗口管理器接口仍为规划。阶段划分与
+> 阶段 2 窗口管理器 core（W1）已落地，NAPI 导出仍为规划。阶段划分与
 > [hgs-shared-runtime-phase0.md](hgs-shared-runtime-phase0.md) 对齐。
 
 ## 0. 结论
@@ -540,7 +540,7 @@ Wayland 线程；因此 host 实现里可以直接调 `startAbility` / `window.W
 |---|---|---|---|
 | 0 ✅ | 无（只落 C++ 头文件） | 无 | 无 |
 | 1 ✅ | `startServer(config)`、`isRunning`、`getWaylandDisplayName`、`getClientEnvironment`、`getApiVersion`、`getLastError`、`attachSurface`、`resizeSurface`、`detachSurface`、`setInputBackend`、`getInputBackend`、`setToplevelEventCallback`、`takePendingToplevel`、`closeToplevel`、`bindXComponent(2 参)` | `createRenderer/resizeRenderer/destroyRenderer/getCurrentToplevelId/notifyToplevelResizeEnd/sendToplevelClose` 转发并打弃用日志；`.d.ts` 补全 gamepad/controller 等缺失声明 | `HgsSurface` 增加 `inputBackend`（N1 原生输入） |
-| 2 | `setWindowCallback`、`setWindowHost`、`notifyWindowGeometry/Focus/State/Closed`、`getWindow/listWindows/getWindowZOrder` | `setToplevelCallback` 标 deprecated | 新增 `HgsWindowPage`、`HgsWindowHostService`、`HgsAppWindowAbility` |
+| 2 | `setWindowCallback`、`setWindowHost`、`notifyWindowGeometry/Focus/State/Closed`、`getWindow/listWindows/getWindowZOrder`（core W1 已落地，NAPI/W2 待做） | `setToplevelCallback` 标 deprecated | 新增 `HgsWindowPage`、`HgsWindowHostService`、`HgsAppWindowAbility` |
 | 3 | 无新增（BetterSH/HarmonyBox 用 Stable 组） | 删除 `createRenderer` 等弃用别名 | 拆出 `WineInputSurface`；`HgsSurface` 删除 Wine props |
 | 4 | `IExternalSurfaceProvider`（C++） | — | 无 |
 

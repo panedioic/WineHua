@@ -499,6 +499,12 @@ test:
 	    $(HGS_CPP)/input/native_keymap.cpp
 	$(HOST_TEST_DIR)/native_keymap_test
 	g++ -std=c++17 -Wall -Wextra $(HOST_TEST_INC) \
+	    -o $(HOST_TEST_DIR)/hgs_window_manager_test \
+	    $(ROOT)/host_tests/hgs_window_manager_test.cpp \
+	    $(HGS_CPP)/api/hgs_window_policy.cpp \
+	    $(HGS_CPP)/api/hgs_window_manager.cpp
+	$(HOST_TEST_DIR)/hgs_window_manager_test
+	g++ -std=c++17 -Wall -Wextra $(HOST_TEST_INC) \
 	    -o $(HOST_TEST_DIR)/presenter_common_test \
 	    $(ROOT)/host_tests/presenter_common_test.cpp
 	$(HOST_TEST_DIR)/presenter_common_test
