@@ -470,10 +470,22 @@ export interface HgsWindowHostOptions {
   windowScale?: number;   // 默认 1；BetterSH 可设 2
 }
 
+export interface HgsWindowHostStartOptions {
+  socketPath: string;
+  outputWidth?: number;        // >0 才下发
+  outputHeight?: number;
+  inputBackend?: number;       // 默认 2 (Native)
+  composition?: number;        // 默认 1 (PerToplevel)
+  dataDevice?: boolean;        // 默认 true
+  winehuaToplevel?: boolean;   // 默认 false
+  setProcessEnvironment?: boolean;  // 默认 false
+}
+
 export class HgsWindowHostService {
   static init(ctx: common.UIAbilityContext, options?: HgsWindowHostOptions): void;
+  // 封装 hgs.startServer；须先 init。string 形式只给 socketPath，其余用默认。
+  static start(options: string | HgsWindowHostStartOptions): boolean;
   static shutdown(): void;
-  static isInitialized(): boolean;
 }
 ```
 

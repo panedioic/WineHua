@@ -1196,7 +1196,10 @@ export struct HgsWindowPage {
 1. `module.json5` 注册 `HgsAppWindowAbility`（5 行子类，`launchType: "multiton"`）。
 2. `main_pages.json` 注册 `pages/HgsWindowPage`（5 行包装页）。
 3. `EntryAbility.onCreate` 调 `HgsWindowHostService.init(this.context, { windowScale: 2 })`。
-4. `HgsInstance.start({ socketPath, inputBackend: Native, features: { dataDevice: true } })`。
+4. `EntryAbility.onCreate` 调 `HgsWindowHostService.start({ socketPath, ... })` —
+   封装 `hgs.startServer`，默认 `inputBackend=Native` / `PerToplevel` /
+   `dataDevice=true` / `setProcessEnvironment=false`；可传 string 只给路径，
+   或传 `HgsWindowHostStartOptions` 覆盖 output/backend/features。
 
 `HgsAppWindowAbility` 在 `onWindowStageCreate` 里按 `w/h × windowScale` 调
 `mainWindow.resize`（BetterSH 现在由 `ClientWindow` 在 resize 事件里做，
@@ -1232,11 +1235,11 @@ EntryAbility 初始化：
 
 ```ts
 HgsWindowHostService.init(this.context, { abilityName: 'AppRunnerAbility' });
-hgs.start({
+HgsWindowHostService.start({
   socketPath: SOCK,
-  inputBackend: 2,
-  composition: 1,                 // PerToplevel
-  features: { dataDevice: true }, // GTK seat/clipboard
+  inputBackend: 2,                 // Native
+  composition: 1,                  // PerToplevel
+  dataDevice: true,                // GTK seat/clipboard
 });
 ```
 
