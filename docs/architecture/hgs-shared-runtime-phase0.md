@@ -2,9 +2,10 @@
 
 > 最后核实：2026-11-04
 > 适用仓库：`/workspace/WineHua-root/WineHua`（外层分支 `feature/hgs-har-scaffold`），
-> hgs submodule（`main`，当前 `b2f68a0`）
-> 状态：**阶段 0 已实施**（P0.0–P0.3 落地，见各仓库提交；P0.4 的 Docker 原生编译
-> 验证通过，签名 HAP 因本机未挂载签名材料未出包）。§14/§15 为后续阶段设计。
+> hgs submodule（`main`，当前 `0cc9e22`）
+> 状态：**阶段 0 已完成；阶段 1 进行中**（P1.1 NAPI canonical/回调收口、
+> P1.2 typed sink、P1.3 setProcessEnvironment、N1 原生输入已落地；签名 HAP
+> 因本机未挂载签名材料未出包，原生编译已验证）。§14/§15 为后续阶段设计。
 
 ## 0. 一句话
 
@@ -688,13 +689,19 @@ docker run --rm --user 1000:1000 -e HOME=/tmp \
 
 ## 11. 实施顺序与回滚
 
-| 步骤 | 内容 | 可独立提交 |
+| 步骤 | 内容 | 状态 |
 |---|---|---|
-| P0.0 | 修 `Makefile` host test 路径，`make test` 恢复绿 | 是 |
-| P0.1 | 事件枚举迁入 `api/hgs_events.h`，bus 加 `using`；更新 `toplevel_event_test.cpp` 的数值遍历；新增事件映射测试 | 是 |
-| P0.2 | 新增 `hgs_types.h` / `hgs_endpoint.h` / `hgs_host.h` / `hgs.h` + endpoint 测试 | 是 |
-| P0.3 | 新增 `hgs_instance.h/.cpp`；`IsRunning` / `CreateRenderer` 改 bool；CMake 接入 | 是 |
-| P0.4 | Docker `make hap` + `make test` 全绿 | — |
+| P0.0 | 修 `Makefile` host test 路径，`make test` 恢复绿 | ✅ `aaebd8453` |
+| P0.1 | 事件枚举迁入 `api/hgs_events.h`，bus 加 `using`；更新 `toplevel_event_test.cpp` 的数值遍历；新增事件映射测试 | ✅ hgs `8fe3a04` |
+| P0.2 | 新增 `hgs_types.h` / `hgs_endpoint.h` / `hgs_host.h` / `hgs.h` + endpoint 测试 | ✅ hgs `1857cb7` |
+| P0.3 | 新增 `hgs_instance.h/.cpp`；`IsRunning` / `CreateRenderer` 改 bool；CMake 接入 | ✅ hgs `b2f68a0` |
+| P0.4 | Docker 原生编译验证（签名 HAP 待签名材料挂载） | ✅ HAR 构建通过 |
+| P1.1 | NAPI canonical 导出 + 回调经 `IHgsHost` 收口 + 旧名弃用转发 + `.d.ts` 补齐 | ✅ hgs `0ff11ad` |
+| P1.2 | `ToplevelEventBus::EventSink` 类型化，删字符串反查 | ✅ hgs `2ca4d1b` |
+| P1.3 | `setProcessEnvironment=false` 生效（不 setenv，宿主用 `ClientEnvironment`） | ✅ hgs `f433cdd` |
+| N1 | 原生输入：mouse/key/axis/focus + touch 单击；`bindXComponent(id)`；原生 renderer | ✅ hgs `0cc9e22` |
+| N2 | 手势状态机移植（长按/双击/双指/触控板），Native 与 ArkTS 行为对齐 | ⏳ |
+| P1.4 | `HgsInstance` 持有状态 / seam provider / smoke 移出产品库 / HgsSurface Wine 手势拆分 | ⏳ |
 
 提交归属：
 
@@ -914,11 +921,11 @@ enum class InputBackend : uint8_t { Auto = 0, ArkTS = 1, Native = 2 };
 
 ### 14.7 分阶段
 
-| 阶段 | 内容 | 验收 |
+| 阶段 | 内容 | 状态 |
 |---|---|---|
-| N1（阶段 1） | mouse/key/axis/focus 原生直通；touch 单击转左键；滚轮 | BetterSH/HarmonyBox 无 ArkTS 输入事件可用 |
-| N2（阶段 2） | 手势状态机移植（长按/双击/双指/触控板）；Wine 专用策略拆 `WineInputPolicy` | WineHua Native 模式与 ArkTS 模式行为对齐 |
-| N3（阶段 3） | WineHua 默认切 Native；ArkTS 路径降为兼容开关 | 设置页 A/B 均可运行 |
+| N1（阶段 1） | mouse/key/axis/focus 原生直通；touch 单击转左键；滚轮；原生 renderer (`CreateRendererFromWindow`) | ✅ hgs `0cc9e22`（真机坐标单位/键位待回归） |
+| N2（阶段 2） | 手势状态机移植（长按/双击/双指/触控板）；Wine 专用策略拆 `WineInputPolicy` | ⏳ |
+| N3（阶段 3） | WineHua 默认切 Native；ArkTS 路径降为兼容开关 | ⏳ |
 
 ### 14.8 风险
 
