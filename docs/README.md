@@ -49,6 +49,7 @@
 | [hgs-p0/README.md](architecture/hgs-p0/README.md) | P0 源码、依赖、冲突与功能失败基线 |
 | [hgs-p1/README.md](architecture/hgs-p1/README.md) | P1 公共服务边界、两宿主验证与 Vulkan 对照 |
 | [hgs-p2/README.md](architecture/hgs-p2/README.md) | P2 X11 后端接入与最小宿主验证 |
+| [hgs-p3/README.md](architecture/hgs-p3/README.md) | P3 WineHua 显示端点接入与真机验证 |
 | [overview.md](architecture/overview.md) | 总览：四大块（Wine / 合成器 / 音频 / 图形）怎么拼起来，进程之间怎么连 |
 | [wine-internals.md](architecture/wine-internals.md) | Wine 内部的 PE 与 Unix 分层、wineserver 通信、合成器模块结构、日志纪律 |
 | [graphics-matrix.md](architecture/graphics-matrix.md) | Direct3D 版本、渲染后端档位、GPU 通道三者的对应关系；档位怎么定 |

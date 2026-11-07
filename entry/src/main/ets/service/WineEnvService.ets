@@ -3,7 +3,8 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import testNapi from 'libentry.so';
 import hgsNapi from 'libhgs.so';
-import { HgsService } from 'hgs';
+import { HgsService, HgsX11Options } from 'hgs';
+import { X11ProbeWindowHost } from './X11ProbeWindowHost';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
 import { ProcessService, ProcessInfo } from './ProcessService';
@@ -101,6 +102,32 @@ export function removePathRecursive(path: string): void {
 // native evt:* 瞬时事件经 subscribeEvents 转发 (ProcessService/启动反馈),
 // 事件除 desktop-ready 补票升级 ready-degraded 外永不迁移状态机。
 export class WineEnvService {
+  // Opt-in for the X11 integration test. The product UI still uses Wayland.
+  hgsX11Probe: boolean = false;
+  readonly x11ProbeWindowHost: X11ProbeWindowHost = new X11ProbeWindowHost();
+
+  private async prepareX11Probe(ctx: common.Context): Promise<HgsX11Options> {
+    const dir = ctx.filesDir + '/hgs-p3-x11';
+    if (!ensureDirectory(dir)) throw new Error('无法创建 X11 测试资源目录');
+    const archive = dir + '/hgs-x11-res.zip';
+    const data = ctx.resourceManager.getRawFileContentSync('hgs-x11-res.zip');
+    const file = fs.openSync(archive, fs.OpenMode.CREATE | fs.OpenMode.TRUNC | fs.OpenMode.WRITE_ONLY);
+    try {
+      fs.writeSync(file.fd, data.buffer);
+    } finally {
+      fs.closeSync(file);
+    }
+    try {
+      await zlib.decompressFile(archive, dir, {});
+    } finally {
+      fs.unlinkSync(archive);
+    }
+    return {
+      xkbRoot: dir + '/hgs-x11/xkb',
+      keymapPath: dir + '/hgs-x11/keymap.xkm'
+    };
+  }
+
   private static instance: WineEnvService | null = null;
 
   static getInstance(): WineEnvService {
@@ -915,23 +942,42 @@ export class WineEnvService {
     // 判定, 重启引擎会沿用旧模式 (改融合后桌面窗口依旧出现)
     WineWindowManager.getInstance().applyModePolicy();
     testNapi.setHostShadowProfile(this.perfProfile);
+    const service = HgsService.create();
+    const x11 = this.hgsX11Probe;
+    let started = false;
     try {
-      const graphics = await HgsService.create().start({
-        protocols: 'wayland',
-        runtimeDir: `${FILES_BASE}/.wine`,
-        wayland: { socketName: 'wine-wayland' },
-        composition: 'preserve',
-        setProcessEnvironment: false
-      });
-      const environment = graphics.clientEnvironment('wayland');
-      hilog.info(DOMAIN, 'wine', 'HGS service ready epoch=%{public}s display=%{public}s',
-        graphics.epoch, environment.set['WAYLAND_DISPLAY']);
+      const graphics = x11
+        ? await service.start({
+          protocols: 'x11', runtimeDir: this.ctx.filesDir + '/hgs-p3-runtime',
+          composition: 'per-window', x11: await this.prepareX11Probe(this.ctx)
+        })
+        : await service.start({
+          protocols: 'wayland', runtimeDir: `${FILES_BASE}/.wine`,
+          wayland: { socketName: 'wine-wayland' }, composition: 'preserve',
+          setProcessEnvironment: false
+        });
+      started = true;
+      const environment = graphics.clientEnvironment(x11 ? 'x11' : 'wayland');
+      if (environment.inheritedFds.length > 0) {
+        throw new Error('Wine 进程 broker 不支持此显示端点的继承 fd');
+      }
+      const displayEnvironment: string[] = [];
+      environment.unset.forEach((name: string) => displayEnvironment.push(`${name}=`));
+      Object.keys(environment.set).forEach((name: string) =>
+        displayEnvironment.push(`${name}=${environment.set[name]}`));
+      if (x11) {
+        this.x11ProbeWindowHost.start(graphics);
+      }
+      hilog.warn(DOMAIN, 'wine', 'HGS service ready epoch=%{public}s protocol=%{public}s display=%{public}s',
+        graphics.epoch, x11 ? 'x11' : 'wayland',
+        environment.set[x11 ? 'DISPLAY' : 'WAYLAND_DISPLAY']);
+      testNapi.launchClient(BOX64, [], SOCK, `${BIN_DIR}:${WINE_LIB}`, this.zHome,
+        this.d3dBackend, this.dxvkBackend, this.wineLang, displayEnvironment);
     } catch (error) {
+      this.x11ProbeWindowHost.stop();
+      if (started) await service.stop();
       this.failInit(`启动图形服务失败: ${String(error)}`);
-      return;
     }
-    testNapi.launchClient(BOX64, [], SOCK, `${BIN_DIR}:${WINE_LIB}`, this.zHome,
-      this.d3dBackend, this.dxvkBackend, this.wineLang);
   }
 
   // 停止会话原语: 编排 stopAll 并等 native state:stopped (注册表进程全死
@@ -960,6 +1006,7 @@ export class WineEnvService {
       hilog.error(DOMAIN, 'wine', 'stopSession stopAll error: %{public}s', JSON.stringify(e));
     }
     await this.waitForEngineStopped(35000);
+    this.x11ProbeWindowHost.stop();
     this.engineState = 'idle';
     this.engineStage = '';
   }

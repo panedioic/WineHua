@@ -76,6 +76,9 @@ export default class EntryAbility extends UIAbility {
     if (parameters && parameters['winehua.autoStart'] === '1') {
       WineEnvService.getInstance().autoStartPending = true;
     }
+    if (parameters && parameters['winehua.hgsX11Probe'] !== undefined) {
+      WineEnvService.getInstance().hgsX11Probe = parameters['winehua.hgsX11Probe'] === '1';
+    }
     // winehua.program=<wine 路径> → 引擎就绪后自动启动该程序
     if (parameters && parameters['winehua.program'] !== undefined &&
       parameters['winehua.program'] !== null) {
@@ -188,6 +191,7 @@ export default class EntryAbility extends UIAbility {
 
     // 初始化多窗口管理器
     WineWindowManager.getInstance().init(windowStage, this.context);
+    WineEnvService.getInstance().x11ProbeWindowHost.setStage(windowStage);
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
@@ -207,6 +211,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
+    WineEnvService.getInstance().x11ProbeWindowHost.setStage(null);
     // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
