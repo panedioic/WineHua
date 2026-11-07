@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/prctl.h>
+#include "wine/display_environment.h"
 #include "wine/wine_constants.h"
 #include "wine/wine_env.h"
 #include <fcntl.h>
@@ -180,13 +181,13 @@ static const char *active_wine_prefix()
     return prefix && prefix[0] ? prefix : WINE_PREFIX;
 }
 
-static void refresh_wine_session_paths()
+static void refresh_wine_session_paths(bool preserveRuntimeDir = false)
 {
     const char *prefix = active_wine_prefix();
     std::string brokerPath(prefix);
     const size_t slash = brokerPath.find_last_of('/');
 
-    setenv("XDG_RUNTIME_DIR", prefix, 1);
+    if (!preserveRuntimeDir) setenv("XDG_RUNTIME_DIR", prefix, 1);
     if (slash == std::string::npos)
         brokerPath = ".wine_broker";
     else
@@ -332,7 +333,10 @@ static void apply_entry_param_env_overrides(const std::vector<std::string>& envO
                         value.c_str());
             continue;
         }
-        setenv(key.c_str(), value.c_str(), 1);
+        if (value.empty() && winehua::IsDisplayEnvironmentKey(key))
+            unsetenv(key.c_str());
+        else
+            setenv(key.c_str(), value.c_str(), 1);
         if (key == "WINEHUA_BOOTSTRAP_PHASE" || key.rfind("BOX64_DYNAREC_", 0) == 0)
             OH_LOG_INFO(LOG_APP, "[WineChild] env override %{public}s=%{public}s",
                         key.c_str(), value.c_str());
@@ -480,7 +484,8 @@ extern "C" void Main(NativeChildProcess_Args args)
     // WINEPREFIX is a per-session override. Derive paths only after the final
     // value is known, and avoid a "prefix/../" path whose intermediate prefix
     // may not exist after a clean install.
-    refresh_wine_session_paths();
+    const char* displayRoute = getenv("WINEHUA_DISPLAY_ROUTE");
+    refresh_wine_session_paths(displayRoute && strcmp(displayRoute, "wayland") == 0);
 
     log_d3d_environment_summary();
 

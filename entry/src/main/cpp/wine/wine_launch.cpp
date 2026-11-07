@@ -362,6 +362,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
     // homeDir 前缀 / WINEPREFIX 权威 / audio fd 由 broker 服务端补齐。
     gBrokerHomeDir = p->homeDir;
     gBrokerPrefixDir = p->prefixDir;
+    SetBrokerDisplayEnvironment(p->display.brokerSuffix);
     StartBrokerServer();
     setenv("PROCESSBROKER", WINE_BROKER_SOCKET, 1);
 
@@ -453,7 +454,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
         // token — Main 的 box64 路径自注 binDir/wine ELF, 与旧 reseed 路径的
         // "wine|wineboot" 布局等价)
         winehua::SpawnRequest wbReq{winehua::SpawnKind::Wineboot};
-        wbReq.desktopSurface = ws->IsDesktopMode();
+        wbReq.desktopSurface = !p->display.x11 && ws->IsDesktopMode();
         wbReq.env = {"LANG=" + p->wineLang + ".UTF-8",
                      "LC_ALL=" + p->wineLang + ".UTF-8"};
         // wineboot 阶段也加载 winebus (winedevice 由 wineserver 拉起, 可能先于
@@ -582,7 +583,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
     // -- explorer desktop shell (仅 desktop 模式) --
     PrepareDesktopSessionGraphicsEnv(*p);
 
-    if (hgs::seam::HostSessionControl().IsDesktopMode())
+    if (!p->display.x11 && hgs::seam::HostSessionControl().IsDesktopMode())
     // -- explorer (Desktop 或 Pad 模式均启动, 走 broker 统一路径) --
     {
         auto* ws = &hgs::seam::HostSessionControl();

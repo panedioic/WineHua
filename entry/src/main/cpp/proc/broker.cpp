@@ -28,6 +28,7 @@ std::string gBrokerPrefixDir;
 #include <thread>
 #include <atomic>
 #include <utility>
+#include <mutex>
 #include <vector>
 #include <AbilityKit/native_child_process.h>
 
@@ -40,6 +41,14 @@ std::string gBrokerPrefixDir;
 static const char* kBrokerSocketPath = WINE_BROKER_SOCKET;
 
 static std::atomic<bool> gBrokerRunning{false};
+static std::mutex gDisplayEnvironmentMutex;
+static std::string gDisplayEnvironment;
+
+void SetBrokerDisplayEnvironment(std::string suffix)
+{
+    std::lock_guard<std::mutex> lock(gDisplayEnvironmentMutex);
+    gDisplayEnvironment = std::move(suffix);
+}
 
 // -- 从 entryParams 解析进程 exe 路径 (登记到任务列表用) --
 // broker 加了 homeDir 前缀后 entryParams 形如
@@ -177,6 +186,10 @@ static void HandleRequest(int conn_fd)
                             : (gBrokerHomeDir + "|" + entryParamsRaw);
     if (!gBrokerPrefixDir.empty())
         fullParams += "|__env=WINEPREFIX=" + gBrokerPrefixDir;
+    {
+        std::lock_guard<std::mutex> lock(gDisplayEnvironmentMutex);
+        fullParams += gDisplayEnvironment;
+    }
     OH_LOG_INFO(LOG_APP, "[Broker] dispatch prefix=%{public}s",
                 gBrokerPrefixDir.empty() ? "(inherited)" : gBrokerPrefixDir.c_str());
     char* entryParamsCopy = strdup(fullParams.c_str());

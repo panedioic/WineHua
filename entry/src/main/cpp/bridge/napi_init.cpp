@@ -6,6 +6,7 @@
 #include "graphics/graphics_broker.h"
 #include "wine/wine_constants.h"
 #include "wine/wine_env.h"
+#include "proc/broker.h"
 #include "proc/wine_process.h"
 #include "wine/wine_launch.h"
 #include "wine/wine_exe.h"
@@ -270,8 +271,8 @@ static napi_value SetHostShadowProfile(napi_env env, napi_callback_info info) {
 }
 
 static napi_value LaunchClient(napi_env env, napi_callback_info info) {
-    size_t argc = 8;
-    napi_value args[8] = {};
+    size_t argc = 9;
+    napi_value args[9] = {};
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
     auto* p = new LaunchParams();
@@ -310,6 +311,24 @@ static napi_value LaunchClient(napi_env env, napi_callback_info info) {
         napi_get_value_string_utf8(env, args[7], wineLang, sizeof(wineLang), nullptr);
         if (!strcmp(wineLang, "zh_CN") || !strcmp(wineLang, "en_US"))
             p->wineLang = wineLang;
+    }
+    if (argc >= 9) {
+        uint32_t count = 0;
+        bool valid = napi_get_array_length(env, args[8], &count) == napi_ok && count <= 6;
+        std::vector<std::string> lines;
+        for (uint32_t i = 0; valid && i < count; ++i) {
+            napi_value item;
+            size_t length = 0;
+            valid = napi_get_element(env, args[8], i, &item) == napi_ok &&
+                    napi_get_value_string_utf8(env, item, buf, sizeof(buf), &length) == napi_ok &&
+                    length < sizeof(buf) - 1;
+            if (valid) lines.emplace_back(buf, length);
+        }
+        if (!valid || !winehua::BuildWineDisplayEnvironment(lines, p->display)) {
+            delete p;
+            napi_throw_type_error(env, nullptr, "invalid HGS display environment");
+            return nullptr;
+        }
     }
     // 向后兼容: 旧调用未传 homeDir 时使用默认路径
     if (p->homeDir.empty()) {
@@ -428,6 +447,7 @@ static napi_value StopClient(napi_env, napi_callback_info) {
 static napi_value StopAll(napi_env, napi_callback_info) {
     winehua::GraphicsBroker::GetInstance().Stop();
     KillAllProcesses();
+    SetBrokerDisplayEnvironment({});
     hgs::seam::HostSessionControl().Stop();
     // 会话终结信号: zombie 感知等待全部死亡后发一次 state:stopped —
     // ArkTS 重启/重置/停止编排以它为继续条件 (取代阶段1 的进程表轮询)。

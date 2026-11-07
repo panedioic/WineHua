@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <napi/native_api.h>
+#include "display_environment.h"
 
 struct LaunchParams {
     std::string exePath;
@@ -13,6 +14,7 @@ struct LaunchParams {
     std::string sockName;
     std::string winehuaBin;
     std::string prefixDir;
+    winehua::WineDisplayEnvironment display;
     std::string d3dBackend = "vkd3d_limited_500k";
     std::string dxvkBackend = "dxvk_legacy";
     // Wine locale 语言 ("zh_CN"/"en_US"), 来自设置页, 决定桌面会话的 LANG
