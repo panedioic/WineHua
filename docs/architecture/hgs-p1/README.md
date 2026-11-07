@@ -4,7 +4,7 @@
 
 ## 实现位置与契约
 
-实施树：`/workspace/WineHua-root/hgs-integration`，HGS 位于其 `hgs/`，基于 WineHua `3355dab96b968cd7e6d3da1e01e1a9c7c0b831fc` / HGS `bad402da1a8bdb56c87c2010a2727c09fc58251b`。原 WineHua/HGS 工作树的已有修改保留。本次提交按 HGS 在先、WineHua 更新 gitlink 在后的顺序发布到各自的 feature/hgs-dual-protocol 分支。
+实施树：`/workspace/WineHua-root/hgs-integration`，HGS 位于其 `hgs/`，基于 WineHua `3355dab96b968cd7e6d3da1e01e1a9c7c0b831fc` / HGS `bad402da1a8bdb56c87c2010a2727c09fc58251b`。原 WineHua/HGS 工作树的已有修改保留。HGS 已发布到 main，WineHua 的集成提交更新了对该提交的 gitlink。
 
 公共 API 版本升到 1.1（`0x10001`）。完整用法与限制见 `/workspace/WineHua-root/hgs-integration/hgs/docs/api/service-api.md`。
 
