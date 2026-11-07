@@ -1,0 +1,267 @@
+{
+  "source": {
+    "winehua": "3355dab96b968cd7e6d3da1e01e1a9c7c0b831fc",
+    "hgs": "bad402da1a8bdb56c87c2010a2727c09fc58251b"
+  },
+  "architecture": "arm64-v8a",
+  "native": {
+    "status": "PASS",
+    "targets": [
+      {
+        "path": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/native-arm64/libhgs.so",
+        "size": 923944,
+        "sha256": "bfaa72f5acde4ae0b4313d59bf976209fc4fb9b697d6fa430ece986f23632033"
+      },
+      {
+        "path": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/native-arm64/libsmoke_napi.so",
+        "size": 16536,
+        "sha256": "43ff1ba9c3d2f8b2382a1e200205f70ce7848e0991a38a046934a227f6318091"
+      }
+    ],
+    "log": {
+      "path": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/hgs-native-build.log",
+      "size": 16670,
+      "sha256": "e52b853b0fc620ade10b04e805914222d9cd915c9f35948b4aad6d8098d97272"
+    }
+  },
+  "hap": {
+    "status": "UNSIGNED_BUILD_PASS",
+    "artifact": {
+      "path": "/workspace/WineHua-root/hgs-integration/entry/build/default/outputs/default/entry-default-unsigned.hap",
+      "size": 398098027,
+      "sha256": "398cb72be3a16103b8a1e1d1a1f35d8b6aaefe6e49698f86e66f50de91784428"
+    },
+    "tasks": "43 executed, 0 up-to-date",
+    "log": {
+      "path": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/hap-unsigned-build.log",
+      "size": 44973,
+      "sha256": "792fbdf26155643602775e3bc15222d89c6f72a77e0352684dc549d0f51e2485"
+    },
+    "profile": "Signing configuration removed in isolated worktree; arm64-v8a ABI",
+    "runtime_assets_rebuilt": false,
+    "reused_runtime_inputs": [
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/box64.so",
+        "size": 33963256,
+        "sha256": "43a50508431313cff32883382b45ea0d195abbbaa684c365aa9b7edfe245a607"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libepoxy.so.0",
+        "size": 3703224,
+        "sha256": "1af8d8f8b050bf901438ac911411896f3f0814f4e913a3e731d0b33bdeec249e"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libffi.so.8",
+        "size": 102104,
+        "sha256": "2fcf64e14efc9ae8840dd002dc1fcac6ae723c662dbc5a3bce0298825e3e2768"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libfreetype.so",
+        "size": 775352,
+        "sha256": "3210c2f078374ed41d19eba66be2362be0b01215f468117653a194d7b03d598a"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libfreetype.so.6",
+        "size": 775352,
+        "sha256": "3210c2f078374ed41d19eba66be2362be0b01215f468117653a194d7b03d598a"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libvirglrenderer.so.1",
+        "size": 3199144,
+        "sha256": "500236a30e37ab07a6d8285c0dbffe777139979711d8825fd89130d905839171"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libwayland-client.so.0",
+        "size": 162880,
+        "sha256": "ad8fe613575b92c2203db284db7c08c9cd99500fbd45be7d80c7f2cf01cd7fde"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libwayland-egl.so.1",
+        "size": 14856,
+        "sha256": "2ea9896c0d07a4ef8dc5c93a0d025f6be9bb7a8fc29cbd831918bcee5e7b1650"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libwayland-server.so.0",
+        "size": 232800,
+        "sha256": "d68f2505f722e0f46fc57dcd1624c8c3ab86773e0b39ddcd0f8582882ce55d21"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libwinehua_host_heaven_replay.so",
+        "size": 72088,
+        "sha256": "06248305010d7e2d39f34625d6a9d9a9b72dd8f8c888330891ab7ed52f5e253c"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libwinehua_vtest_server.so",
+        "size": 169408,
+        "sha256": "ce03b20233cc398c1a3da8dc79bf01cd44d5586eefeb60e639f00bced46cba63"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxkbcommon.so",
+        "size": 736976,
+        "sha256": "2d62d5cf53e0116ea4d2ed56d1641e3f4710ff90e39188bddc7ad3997be8ef22"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxkbcommon.so.0",
+        "size": 736976,
+        "sha256": "2d62d5cf53e0116ea4d2ed56d1641e3f4710ff90e39188bddc7ad3997be8ef22"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxkbregistry.so",
+        "size": 84120,
+        "sha256": "6c985b70437687eeebeb8ce56665c911ef98e61744d1219dace7098f77263fbf"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxkbregistry.so.0",
+        "size": 84120,
+        "sha256": "6c985b70437687eeebeb8ce56665c911ef98e61744d1219dace7098f77263fbf"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxml2.so",
+        "size": 1624328,
+        "sha256": "2743342f67ad39f24bcb3427c924448d48290a2f3bdfdfdf3bacfe4f45bbb3e3"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/libxml2.so.2",
+        "size": 1624328,
+        "sha256": "2743342f67ad39f24bcb3427c924448d48290a2f3bdfdfdf3bacfe4f45bbb3e3"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/libs/arm64-v8a/virgl_test_server",
+        "size": 169824,
+        "sha256": "6448666ca88ab42990ef9e236549b690402cc4d0e98f63da53ce9c2d4ab2c4c8"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libffi.so.8",
+        "size": 102104,
+        "sha256": "2fcf64e14efc9ae8840dd002dc1fcac6ae723c662dbc5a3bce0298825e3e2768"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libfreetype.so",
+        "size": 844152,
+        "sha256": "70fc7b2729bcee0ebdb37399455c3b75f10bd0d05c2fb969080eadd1f5776905"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libfreetype.so.6",
+        "size": 844152,
+        "sha256": "70fc7b2729bcee0ebdb37399455c3b75f10bd0d05c2fb969080eadd1f5776905"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-client.so",
+        "size": 75136,
+        "sha256": "57b9a9db1abea406f6d32888519594ab024295f5b8171c10aab4a2270cfa2f68"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-client.so.0",
+        "size": 75136,
+        "sha256": "57b9a9db1abea406f6d32888519594ab024295f5b8171c10aab4a2270cfa2f68"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-cursor.so",
+        "size": 36616,
+        "sha256": "954c7665cc2d877e6bac5807ebe978d5f3c306b4c389ff824d97a69c7afcc520"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-cursor.so.0",
+        "size": 36616,
+        "sha256": "954c7665cc2d877e6bac5807ebe978d5f3c306b4c389ff824d97a69c7afcc520"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-egl.so",
+        "size": 12504,
+        "sha256": "b6f4a613e4f0cc705f12b07524b9db8a4d56db35ffb97f3cae2c1121be4f7c80"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-egl.so.1",
+        "size": 12504,
+        "sha256": "b6f4a613e4f0cc705f12b07524b9db8a4d56db35ffb97f3cae2c1121be4f7c80"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-server.so",
+        "size": 97072,
+        "sha256": "554a0f927a70494a46ac10dc476c26dd2d99c7bcf50ca94c4e35621cfa771120"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libwayland-server.so.0",
+        "size": 97072,
+        "sha256": "554a0f927a70494a46ac10dc476c26dd2d99c7bcf50ca94c4e35621cfa771120"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxkbcommon.so",
+        "size": 288696,
+        "sha256": "a1f0b3da1942e7eed745b1557888def3012c50316291d30f34f721d47d641571"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxkbcommon.so.0",
+        "size": 288696,
+        "sha256": "a1f0b3da1942e7eed745b1557888def3012c50316291d30f34f721d47d641571"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxkbregistry.so",
+        "size": 39616,
+        "sha256": "75cd2b1139041646a05eb1260810ceee473cb9ab8e0a165e4d512e0c92a77e59"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxkbregistry.so.0",
+        "size": 39616,
+        "sha256": "75cd2b1139041646a05eb1260810ceee473cb9ab8e0a165e4d512e0c92a77e59"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxml2.so",
+        "size": 1624304,
+        "sha256": "b976ee72d98a002f863fac325f683486e6283c820a85658f1503cb161bf7ace3"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/hgs/libs/arm64-v8a/libxml2.so.2",
+        "size": 1624304,
+        "sha256": "b976ee72d98a002f863fac325f683486e6283c820a85658f1503cb161bf7ace3"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/src/main/resources/rawfile/wine-data.zip",
+        "size": 342316392,
+        "sha256": "2313f3c9e3e99e4b49759d8c5dd5b7059e2b0aa3934b71b518458d319fc282ed"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/src/main/resources/rawfile/wine-runtime-manifest.json",
+        "size": 142,
+        "sha256": "7dc171d9821f69694340970907ec603150d43baa8a2594c4abd3d9ffd810a086"
+      },
+      {
+        "path": "/workspace/WineHua-root/hgs-integration/entry/src/main/resources/rawfile/winehua-gm.sf2",
+        "size": 12038662,
+        "sha256": "0a107e182fee704ad9b91cbbad2febf97f55cf778ff656ed49415c6a5addd01e"
+      }
+    ],
+    "packaged_native_libraries": [
+      {
+        "entry": "libs/arm64-v8a/libentry.so",
+        "size": 893264,
+        "sha256": "2416d6e9621d89ddf675d1e384143f992ae730072651f1280bf5640381a6d028",
+        "elf_machine": 183
+      },
+      {
+        "entry": "libs/arm64-v8a/libsmoke_napi.so",
+        "size": 8616,
+        "sha256": "b7c9dd97312a834268bf7679cdec378e2464aa75bb28581dd3a60bc62a51d08b",
+        "elf_machine": 183
+      },
+      {
+        "entry": "libs/arm64-v8a/libhgs.so",
+        "size": 1700952,
+        "sha256": "4a8767c056e1156d691601a74e6a32d0c833ca7593864a2e0935e3cdbae82bb1",
+        "elf_machine": 183
+      }
+    ]
+  },
+  "signing": {
+    "status": "PREPARED_NOT_GENERATED",
+    "tool": "/workspace/signer/hapsign_auto.py",
+    "doctor": "PASS",
+    "selftest": "PASS",
+    "user_direction": "Read signer folder; generate signing material later",
+    "cloud_login_performed": false
+  },
+  "upstream_x11": {
+    "status": "NOT_BUILT",
+    "reason": "wlroots/xserver checkout and complete host dependency staging absent"
+  }
+}

@@ -3,6 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import testNapi from 'libentry.so';
 import hgsNapi from 'libhgs.so';
+import { HgsService } from 'hgs';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
 import { ProcessService, ProcessInfo } from './ProcessService';
@@ -914,9 +915,19 @@ export class WineEnvService {
     // 判定, 重启引擎会沿用旧模式 (改融合后桌面窗口依旧出现)
     WineWindowManager.getInstance().applyModePolicy();
     testNapi.setHostShadowProfile(this.perfProfile);
-    const ok: boolean = hgsNapi.startServer(SOCK);
-    if (!ok) {
-      this.failInit('启动服务失败');
+    try {
+      const graphics = await HgsService.create().start({
+        protocols: 'wayland',
+        runtimeDir: `${FILES_BASE}/.wine`,
+        wayland: { socketName: 'wine-wayland' },
+        composition: 'preserve',
+        setProcessEnvironment: false
+      });
+      const environment = graphics.clientEnvironment('wayland');
+      hilog.info(DOMAIN, 'wine', 'HGS service ready epoch=%{public}s display=%{public}s',
+        graphics.epoch, environment.set['WAYLAND_DISPLAY']);
+    } catch (error) {
+      this.failInit(`启动图形服务失败: ${String(error)}`);
       return;
     }
     testNapi.launchClient(BOX64, [], SOCK, `${BIN_DIR}:${WINE_LIB}`, this.zHome,

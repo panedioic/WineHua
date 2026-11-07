@@ -1,0 +1,77 @@
+{
+  "wayland": {
+    "status": "PASS",
+    "command": "make test",
+    "exit_code": 0,
+    "test_program_count": 16,
+    "programs": [
+      "geometry_test",
+      "blit_scaled_test",
+      "blit_clip_test",
+      "shm_frame_source_test",
+      "zorder_test",
+      "env_spec_test",
+      "env_baseline_test",
+      "input_state_test",
+      "toplevel_event_test",
+      "hgs_event_map_test",
+      "hgs_endpoint_test",
+      "native_keymap_test",
+      "hgs_window_manager_test",
+      "presenter_common_test",
+      "controller_merge_test",
+      "display_policy_test"
+    ],
+    "log": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/wayland-host-tests.log",
+    "sha256": "88304aaa421bf135e5e9b9eaec43d7eb016acfcf29985fe8ef98ac7c898c63d5",
+    "whgp_verifier": "not in target"
+  },
+  "upstream": {
+    "status": "PASS",
+    "command": "make test",
+    "exit_code": 0,
+    "test_program_count": 12,
+    "programs": [
+      "geometry_test",
+      "blit_scaled_test",
+      "blit_clip_test",
+      "shm_frame_source_test",
+      "zorder_test",
+      "env_spec_test",
+      "env_baseline_test",
+      "input_state_test",
+      "toplevel_event_test",
+      "presenter_common_test",
+      "controller_merge_test",
+      "display_policy_test"
+    ],
+    "log": "/workspace/WineHua-root/WineHua/build/hgs-p0/2026-11-06/upstream-host-tests.log",
+    "sha256": "b9722ca7cf4e61d95c91b0e742f0248c2cc2110b5d0bfd77981898228494d553",
+    "whgp_verifier": "PASS",
+    "wine_test_inputs": {
+      "commit": "025656dfd3920ea11aaab9e8ac6d905ec35963fe",
+      "paths": [
+        "dlls/winebus.sys/winehua_gamepad_protocol.h",
+        "dlls/winebus.sys/bus_ohos.c"
+      ],
+      "materialization": "exact git show blobs; not a full Wine checkout"
+    }
+  },
+  "device": {
+    "status": "NOT_RUN",
+    "target": "192.168.3.9:46071",
+    "hdc_available_outside_sandbox": true,
+    "winehua_installed": false,
+    "evidence": "hdc list targets; bm dump -n returned error; bm dump -a successful, exact bundle app.hackeris.winehua absent",
+    "runtime_suites": "No graphical smoke performed; no source-matched installed WineHua HAP"
+  },
+  "native_hap": {
+    "status": "PARTIAL_PASS",
+    "hgs_arm64_native": "PASS",
+    "winehua_wayland_unsigned_hap": "PASS",
+    "signed_hap": "PENDING",
+    "x11_native_hap": "NOT_BUILT",
+    "manifest": "build-artifacts.json",
+    "note": "New host native/ArkTS compilation; existing Wine runtime and dependency binaries reused and hashed"
+  }
+}

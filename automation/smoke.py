@@ -523,6 +523,9 @@ def sandbox_texts(hdc: str, device: str, rel_paths: list) -> dict:
     marker = "@@@SMOKE@@@"
     script = f"; echo '{marker}'; ".join(
         f"cat '{REAL_FILES}/{path}' 2>/dev/null" for path in rel_paths)
+    # A missing final summary is normal while a test is still rendering.
+    # Preserve successful earlier reads instead of discarding the fixed-frame event.
+    script += "; true"
     code, out = hdc_shell(hdc, device, script, timeout=HDC_POLL_TIMEOUT_S)
     if code == -1:
         return {}
@@ -710,6 +713,13 @@ def cmd_check(args: argparse.Namespace) -> int:
     suites = load_suites(cases)
     suite = summary.get("suite", "")
     entries = {entry.test_id: entry for entry in suites[suite]["tests"]} if suite in suites else {}
+    # Rechecking a subset must use the same selection as the original run.
+    job_path = archive / "job.json"
+    if job_path.is_file():
+        selected = json.loads(job_path.read_text()).get("tests")
+        if selected:
+            entries = {test_id: entry for test_id, entry in entries.items()
+                       if test_id in selected}
     # 帧分组：<test_id>.jpeg 与重试帧 <test_id>-<n>.jpeg（testId 以 -x64/-x86 结尾，
     # 去掉末尾纯数字后缀即归属测试）
     frames = {}
