@@ -36,6 +36,12 @@ int main()
             "Wayland uses HGS runtime and socket names");
         CHECK(display.brokerSuffix.find("|__env=XAUTHORITY=|") != std::string::npos,
             "Wayland clears stale X11 authorization");
+        CHECK(winehua::BuildWineDisplayEnvironment(
+            {"DISPLAY=:4", "XAUTHORITY=/x", "XMODIFIERS=@im=hgs", "XLOCALEDIR=/x11/locale"}, display) &&
+            display.brokerSuffix.find("|__env=XMODIFIERS=@im=hgs") != std::string::npos,
+            "X11 broker forwards the XIM server and Wine locale directory");
+        CHECK(!winehua::BuildWineDisplayEnvironment(
+            {"DISPLAY=:4", "XAUTHORITY=/x", "XMODIFIERS=@im=hgs"}, display), "XIM requires a locale directory");
         CHECK(!winehua::BuildWineDisplayEnvironment({"DISPLAY=:4"}, display), "reject missing authority");
         CHECK(!winehua::BuildWineDisplayEnvironment(
             {"DISPLAY=:4", "XAUTHORITY=/x|__env=HOME=/other"}, display), "reject broker delimiter");

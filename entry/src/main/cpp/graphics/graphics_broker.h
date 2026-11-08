@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -68,7 +69,7 @@ public:
 
     void AppendWineEnv(std::vector<std::string>& env) const;
     bool AttachZeroCopyTarget(uint64_t surfaceKey, OHNativeWindow* producerWindow,
-                              uint64_t framePeriodNs);
+                              uint64_t framePeriodNs, std::optional<bool> surfaceVulkan = std::nullopt);
     void SetZeroCopyFramePeriod(uint64_t surfaceKey, uint64_t framePeriodNs);
     void DetachZeroCopyTarget(uint64_t surfaceKey);
     bool QueryZeroCopySurfaces(std::vector<ZeroCopySurfaceInfo>& surfaces) const;

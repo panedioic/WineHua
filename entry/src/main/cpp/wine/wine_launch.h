@@ -15,6 +15,7 @@ struct LaunchParams {
     std::string winehuaBin;
     std::string prefixDir;
     winehua::WineDisplayEnvironment display;
+    int32_t x11DesktopWidth = 0, x11DesktopHeight = 0;
     std::string d3dBackend = "vkd3d_limited_500k";
     std::string dxvkBackend = "dxvk_legacy";
     // Wine locale 语言 ("zh_CN"/"en_US"), 来自设置页, 决定桌面会话的 LANG

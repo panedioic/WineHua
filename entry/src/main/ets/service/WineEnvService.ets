@@ -1,9 +1,10 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
-import testNapi from 'libentry.so';
+import { display } from '@kit.ArkUI';
+import testNapi, { WineX11DesktopSize } from 'libentry.so';
 import hgsNapi from 'libhgs.so';
-import { HgsService, HgsX11Options } from 'hgs';
+import { HgsService, HgsServiceOptions, HgsSession, HgsX11Options } from 'hgs';
 import { X11ProbeWindowHost } from './X11ProbeWindowHost';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
@@ -105,6 +106,18 @@ export class WineEnvService {
   // Opt-in for the X11 integration test. The product UI still uses Wayland.
   hgsX11Probe: boolean = false;
   readonly x11ProbeWindowHost: X11ProbeWindowHost = new X11ProbeWindowHost();
+  private x11DesktopSession: boolean = false;
+
+  private onX11DesktopReady = (ready: boolean): void => {
+    if (!this.x11DesktopSession) return;
+    this.desktopActive = ready;
+    this.desktopSurfaceReady = ready;
+    if (ready) {
+      this.onNativeState('evt:desktop-ready');
+    } else {
+      this.notify();
+    }
+  };
 
   private async prepareX11Probe(ctx: common.Context): Promise<HgsX11Options> {
     const dir = ctx.filesDir + '/hgs-p3-x11';
@@ -124,7 +137,9 @@ export class WineEnvService {
     }
     return {
       xkbRoot: dir + '/hgs-x11/xkb',
-      keymapPath: dir + '/hgs-x11/keymap.xkm'
+      keymapPath: dir + '/hgs-x11/keymap.xkm',
+      imeServerName: HgsService.create().inspect().capabilities.xim &&
+        pathExists(`${WINE_ROOT}/share/X11/locale/locale.dir`) ? 'hgs' : ''
     };
   }
 
@@ -389,8 +404,10 @@ export class WineEnvService {
     });
     const wm = WineWindowManager.getInstance();
     wm.subscribe(() => {
-      this.desktopActive = wm.desktopActive;
-      this.desktopSurfaceReady = wm.desktopSurfaceReady;
+      if (!this.x11DesktopSession) {
+        this.desktopActive = wm.desktopActive;
+        this.desktopSurfaceReady = wm.desktopSurfaceReady;
+      }
       this.desktopMode = wm.isDesktopMode;
       this.notify();
     });
@@ -442,6 +459,10 @@ export class WineEnvService {
       this.handleEngineState(s.substring(6));
     } else if (s.startsWith('evt:')) {
       const body = s.substring(4);
+      if (this.x11DesktopSession && body.startsWith('x11-desktop-pid:')) {
+        this.x11ProbeWindowHost.setDesktopPid(Number(body.substring('x11-desktop-pid:'.length)));
+        return;
+      }
       // "evt 永不迁移状态机"的唯一例外 (蓝图 §2.2): desktop-ready 把
       // ready-degraded 补票升级为正式 ready; 其余状态收到它是无害空转
       if (body == 'desktop-ready' && this.engineState == 'ready-degraded') {
@@ -464,9 +485,9 @@ export class WineEnvService {
       this.initFailed = false;
       // bgStart (后台自动拉起) 不弹模态 overlay, 进度只进 statusText
       this.setInitStatus('Wine 正在初始化...', !this.bgStart);
-    } else if (name == 'ready') {
+    } else if (name == 'ready' && (!this.x11DesktopSession || this.desktopSurfaceReady)) {
       this.enterReady();
-    } else if (name == 'ready-degraded') {
+    } else if (name == 'ready-degraded' || name == 'ready') {
       // 桌面根 15s 未就绪 (仅 desktop 模式): 引擎活着但桌面没起来 — 进行中
       // 而非就绪。canLaunch 不放行 (程序抢跑会死在 DXGI 初始化); root 出现后
       // native 补发 evt:desktop-ready 升级。注意 overlay 必须隐去而非留驻:
@@ -942,20 +963,45 @@ export class WineEnvService {
     // 判定, 重启引擎会沿用旧模式 (改融合后桌面窗口依旧出现)
     WineWindowManager.getInstance().applyModePolicy();
     testNapi.setHostShadowProfile(this.perfProfile);
-    const service = HgsService.create();
     const x11 = this.hgsX11Probe;
+    if (!testNapi.configureX11FrameProvider(x11) && x11) {
+      hilog.warn(DOMAIN, 'wine', 'HGS X11 external frame provider unavailable');
+    }
+    const service = HgsService.create();
     let started = false;
     try {
-      const graphics = x11
-        ? await service.start({
+      const wm = WineWindowManager.getInstance();
+      this.x11DesktopSession = x11 && wm.getDesktopMode();
+      let desktopSize: WineX11DesktopSize | undefined;
+      let graphics: HgsSession;
+      if (x11) {
+        const options: HgsServiceOptions = {
           protocols: 'x11', runtimeDir: this.ctx.filesDir + '/hgs-p3-runtime',
           composition: 'per-window', x11: await this.prepareX11Probe(this.ctx)
-        })
-        : await service.start({
+        };
+        if (this.x11DesktopSession) {
+          const screen = display.getDefaultDisplaySync();
+          const scale = Math.max(1, wm.getEffectiveScale());
+          options.output = {
+            width: Math.max(1, Math.min(32767, Math.round(screen.width / scale))),
+            height: Math.max(1, Math.min(32767, Math.round(screen.height / scale)))
+          };
+          this.desktopActive = this.desktopSurfaceReady = false;
+        }
+        graphics = await service.start(options);
+        started = true;
+        if (this.x11DesktopSession) {
+          const endpoint = graphics.endpoints.find((item) => item.protocol === 'x11');
+          if (!endpoint) throw new Error('HGS 未发布 X11 输出');
+          desktopSize = { width: endpoint.outputWidth, height: endpoint.outputHeight };
+        }
+      } else {
+        graphics = await service.start({
           protocols: 'wayland', runtimeDir: `${FILES_BASE}/.wine`,
           wayland: { socketName: 'wine-wayland' }, composition: 'preserve',
           setProcessEnvironment: false
         });
+      }
       started = true;
       const environment = graphics.clientEnvironment(x11 ? 'x11' : 'wayland');
       if (environment.inheritedFds.length > 0) {
@@ -965,16 +1011,20 @@ export class WineEnvService {
       environment.unset.forEach((name: string) => displayEnvironment.push(`${name}=`));
       Object.keys(environment.set).forEach((name: string) =>
         displayEnvironment.push(`${name}=${environment.set[name]}`));
+      if (x11 && environment.set['XMODIFIERS']) {
+        displayEnvironment.push(`XLOCALEDIR=${WINE_ROOT}/share/X11/locale`);
+      }
       if (x11) {
-        this.x11ProbeWindowHost.start(graphics);
+        this.x11ProbeWindowHost.start(graphics, this.x11DesktopSession ? this.onX11DesktopReady : null);
       }
       hilog.warn(DOMAIN, 'wine', 'HGS service ready epoch=%{public}s protocol=%{public}s display=%{public}s',
         graphics.epoch, x11 ? 'x11' : 'wayland',
         environment.set[x11 ? 'DISPLAY' : 'WAYLAND_DISPLAY']);
       testNapi.launchClient(BOX64, [], SOCK, `${BIN_DIR}:${WINE_LIB}`, this.zHome,
-        this.d3dBackend, this.dxvkBackend, this.wineLang, displayEnvironment);
+        this.d3dBackend, this.dxvkBackend, this.wineLang, displayEnvironment, desktopSize);
     } catch (error) {
       this.x11ProbeWindowHost.stop();
+      this.x11DesktopSession = false;
       if (started) await service.stop();
       this.failInit(`启动图形服务失败: ${String(error)}`);
     }
@@ -1007,6 +1057,7 @@ export class WineEnvService {
     }
     await this.waitForEngineStopped(35000);
     this.x11ProbeWindowHost.stop();
+    this.x11DesktopSession = false;
     this.engineState = 'idle';
     this.engineStage = '';
   }
@@ -1092,7 +1143,9 @@ export class WineEnvService {
     if (this.isBusy()) {
       return false;
     }
-    this.restartEngine();
+    if (this.engineState != 'ready-degraded') {
+      this.restartEngine();
+    }
     const deadline = Date.now() + 300000;
     while (this.engineState != 'ready' && Date.now() < deadline) {
       if (this.initFailed || this.engineState == 'failed') {

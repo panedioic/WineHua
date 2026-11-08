@@ -1,6 +1,10 @@
 export const setHostShadowProfile: (profile: string) => boolean;
+export const configureX11FrameProvider: (enabled: boolean) => boolean;
+export const matchX11DesktopProcess: (launcherPid: number, clientPid: number) => boolean;
+export interface WineX11DesktopSize { width: number; height: number; }
 export const launchClient: (exePath: string, argv: string[], sockPath: string, libPath: string,
-  homeDir: string, d3dBackend?: string, dxvkBackend?: string, wineLang?: string, displayEnvironment?: string[]) => number;
+  homeDir: string, d3dBackend?: string, dxvkBackend?: string, wineLang?: string, displayEnvironment?: string[],
+  x11DesktopSize?: WineX11DesktopSize) => number;
 export const stopClient: () => void;
 export const stopAll: () => void;
 export const setStateCallback: (cb: (state: string) => void) => void;

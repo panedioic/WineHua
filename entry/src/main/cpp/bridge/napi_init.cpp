@@ -28,6 +28,7 @@
 #include <thread>
 #include <atomic>
 #include <algorithm>
+#include <cmath>
 #include <dlfcn.h>
 
 #undef LOG_TAG
@@ -38,6 +39,10 @@
 
 // -- 全局状态 (NAPI 层, 被 wine_process / wine_launch 引用) --
 napi_threadsafe_function gStateTsfn = nullptr;
+
+namespace winehua {
+bool ConfigureX11FrameProvider(bool enabled);
+}
 std::string gSockPath;
 
 // -- State 回调 -> ArkTS --
@@ -271,8 +276,8 @@ static napi_value SetHostShadowProfile(napi_env env, napi_callback_info info) {
 }
 
 static napi_value LaunchClient(napi_env env, napi_callback_info info) {
-    size_t argc = 9;
-    napi_value args[9] = {};
+    size_t argc = 10;
+    napi_value args[10] = {};
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
     auto* p = new LaunchParams();
@@ -328,6 +333,28 @@ static napi_value LaunchClient(napi_env env, napi_callback_info info) {
             delete p;
             napi_throw_type_error(env, nullptr, "invalid HGS display environment");
             return nullptr;
+        }
+    }
+    if (argc >= 10) {
+        napi_valuetype type = napi_undefined;
+        napi_typeof(env, args[9], &type);
+        if (type != napi_undefined) {
+            const auto dimension = [&](const char* name, int32_t& value) {
+                napi_value field;
+                double number;
+                if (napi_get_named_property(env, args[9], name, &field) != napi_ok ||
+                    napi_get_value_double(env, field, &number) != napi_ok ||
+                    !std::isfinite(number) || number < 1 || number > 32767 || number != std::floor(number))
+                    return false;
+                value = static_cast<int32_t>(number);
+                return true;
+            };
+            if (!p->display.x11 || type != napi_object ||
+                !dimension("width", p->x11DesktopWidth) || !dimension("height", p->x11DesktopHeight)) {
+                delete p;
+                napi_throw_type_error(env, nullptr, "invalid X11 desktop size");
+                return nullptr;
+            }
         }
     }
     // 向后兼容: 旧调用未传 homeDir 时使用默认路径
@@ -523,6 +550,24 @@ static void CallJsPointerLock(napi_env env, napi_value cb, void*, void* data) {
 
 
 
+// The Wine loader may ask the broker to create the real explorer.exe in another NCP.
+static napi_value MatchX11DesktopProcess(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value args[2];
+    int32_t launcher = 0, client = 0;
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    WineProcessEntry process{};
+    const bool match = argc == 2 &&
+        napi_get_value_int32(env, args[0], &launcher) == napi_ok && launcher > 0 &&
+        napi_get_value_int32(env, args[1], &client) == napi_ok && client > 0 &&
+        QueryProcessSnapshot(client, &process) && process.running &&
+        (client == launcher || (process.requesterPid == launcher && process.exeBasename == "explorer.exe"));
+    if (match) MarkDesktopShellProcesses();
+    napi_value result;
+    napi_get_boolean(env, match, &result);
+    return result;
+}
+
 // -- NAPI: getProcessList — 返回运行中进程列表 --
 static napi_value GetProcessList(napi_env env, napi_callback_info info) {
     auto snapshot = GetProcessListSnapshot();
@@ -581,6 +626,18 @@ static napi_value KillProcess(napi_env env, napi_callback_info info) {
     return r;
 }
 
+static napi_value ConfigureX11FrameProvider(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    const bool ok = argc == 1 && napi_get_value_bool(env, args[0], &enabled) == napi_ok &&
+        winehua::ConfigureX11FrameProvider(enabled);
+    napi_value result;
+    napi_get_boolean(env, ok, &result);
+    return result;
+}
+
 // -- 模块注册 --
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
@@ -595,6 +652,8 @@ static napi_value Init(napi_env env, napi_value exports) {
 
     napi_property_descriptor desc[] = {
         {"setHostShadowProfile", nullptr, SetHostShadowProfile, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"configureX11FrameProvider", nullptr, ConfigureX11FrameProvider, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"matchX11DesktopProcess", nullptr, MatchX11DesktopProcess, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"launchClient",   nullptr, LaunchClient,   nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopClient",     nullptr, StopClient,     nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopAll",        nullptr, StopAll,        nullptr, nullptr, nullptr, napi_default, nullptr},

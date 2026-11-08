@@ -9,7 +9,7 @@ namespace winehua {
 inline bool IsDisplayEnvironmentKey(const std::string& name)
 {
     return name == "DISPLAY" || name == "WAYLAND_DISPLAY" || name == "WAYLAND_SOCKET" ||
-           name == "XAUTHORITY" || name == "XMODIFIERS" || name == "XDG_RUNTIME_DIR";
+           name == "XAUTHORITY" || name == "XMODIFIERS" || name == "XLOCALEDIR" || name == "XDG_RUNTIME_DIR";
 }
 
 struct WineDisplayEnvironment {
@@ -45,8 +45,14 @@ inline bool BuildWineDisplayEnvironment(const std::vector<std::string>& lines,
                !values["XAUTHORITY"].empty()) {
         return false;
     }
-    if (!values["WAYLAND_SOCKET"].empty() || !values["XMODIFIERS"].empty())
+    if (!values["WAYLAND_SOCKET"].empty())
         return false;
+    const auto& modifiers = values["XMODIFIERS"];
+    const auto& localeDir = values["XLOCALEDIR"];
+    if (!modifiers.empty() && (!x11 || modifiers.rfind("@im=", 0) != 0 || modifiers.size() <= 4 ||
+        modifiers.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-", 4) !=
+            std::string::npos || localeDir.empty() || localeDir.front() != '/')) return false;
+    if (modifiers.empty() && !localeDir.empty()) return false;
 
     // Keep Wine's own runtime directory for X11. HGS publishes only DISPLAY and
     // XAUTHORITY for this transport. Force-clear keys from the previous route.

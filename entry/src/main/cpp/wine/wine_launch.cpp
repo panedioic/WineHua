@@ -583,16 +583,17 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
     // -- explorer desktop shell (仅 desktop 模式) --
     PrepareDesktopSessionGraphicsEnv(*p);
 
-    if (!p->display.x11 && hgs::seam::HostSessionControl().IsDesktopMode())
+    const bool x11Desktop = p->display.x11 && p->x11DesktopWidth > 0;
+    if (x11Desktop || (!p->display.x11 && hgs::seam::HostSessionControl().IsDesktopMode()))
     // -- explorer (Desktop 或 Pad 模式均启动, 走 broker 统一路径) --
     {
         auto* ws = &hgs::seam::HostSessionControl();
-        ws->SetDesktopRootRecognitionEnabled(true);
+        if (!x11Desktop) ws->SetDesktopRootRecognitionEnabled(true);
         // 新桌面会话开始: 清除上次会话的桌面 shell 标记守卫, 使本次 root 出现时
         // 重新标记基础进程 (desktop + explorer 等) 为不可由用户结束。
         BeginDesktopSession();
-        int dw = ws->OutputWidth() > 0 ? ws->OutputWidth() : 1280;
-        int dh = ws->OutputHeight() > 0 ? ws->OutputHeight() : 720;
+        int dw = x11Desktop ? p->x11DesktopWidth : (ws->OutputWidth() > 0 ? ws->OutputWidth() : 1280);
+        int dh = x11Desktop ? p->x11DesktopHeight : (ws->OutputHeight() > 0 ? ws->OutputHeight() : 720);
         OH_LOG_WARN(LOG_APP, "[Launch-Async] explorer desktop size: outputW=%{public}d outputH=%{public}d → %{public}dx%{public}d",
                     ws->OutputWidth(), ws->OutputHeight(), dw, dh);
         /* 附带 winehua_keep.exe: 加入 shell desktop 并持久运行,
@@ -611,6 +612,7 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
         std::vector<std::string> explorerEnv = winehua::BuildSessionEnv(explorerPolicy);
 
         winehua::SpawnRequest exReq{winehua::SpawnKind::DesktopShell};
+        exReq.desktopSurface = !x11Desktop;
         exReq.argv = {desktopSize, "C:\\windows\\system32\\winehua_keep.exe"};
         exReq.env = std::move(explorerEnv);
         // broker 自动添加 homeDir 前缀、WINEPREFIX 权威、创建 audio bootstrap fd
@@ -626,6 +628,13 @@ static bool LaunchPadMode(LaunchParams* p, int audioBootstrapFd, bool* desktopDe
             return false;
         }
         AddProcess(exPid, "desktop", -1);
+        if (x11Desktop) {
+            if (gStateTsfn) {
+                const auto event = "evt:x11-desktop-pid:" + std::to_string(exPid);
+                napi_call_threadsafe_function(gStateTsfn, strdup(event.c_str()), napi_tsfn_blocking);
+            }
+            return true;
+        }
         ws->PromotePendingDesktopRoot();
         /* broker 返回 pid 只表示 appspawn 接受了 Explorer 请求。
          * 暖 prefix 下子进程仍需数秒连接 wineserver 并提交 desktop

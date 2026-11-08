@@ -9,7 +9,7 @@ struct X11ProbeWindow {
   build() {
     Stack() {
       if (this.windowId.length > 0 && this.epoch.length > 0) {
-        HgsWindowSurface({ windowId: this.windowId, epoch: this.epoch })
+        HgsWindowSurface({ windowId: this.windowId, epoch: this.epoch, interactive: true })
       }
     }.width('100%').height('100%')
   }

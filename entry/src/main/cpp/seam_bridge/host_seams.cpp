@@ -11,6 +11,7 @@
 // 教训见 hgs seam/registry.h 头注释 (链接期绑定对本方向不成立)。
 // ============================================================================
 #include "seam/registry.h"
+#include "include/hgs/external_frames.h"
 
 #include "graphics/graphics_broker.h"
 #include "proc/wine_process.h"
@@ -24,6 +25,16 @@
 #include <vector>
 
 namespace {
+
+void* ResolveHgsSymbol(const char* name) {
+    if (auto* symbol = dlsym(RTLD_DEFAULT, name)) return symbol;
+    // ArkTS may load NAPI modules with RTLD_LOCAL.
+    void* handle = dlopen("libhgs.so", RTLD_NOW | RTLD_NOLOAD);
+    if (!handle) return nullptr;
+    void* symbol = dlsym(handle, name);
+    dlclose(handle);
+    return symbol;
+}
 
 // ── ZeroCopyBackend → GraphicsBroker 转发 ──────────────────────────────────
 class BrokerZeroCopyBackend : public hgs::seam::ZeroCopyBackend
@@ -81,6 +92,32 @@ public:
     }
 };
 
+class WineX11FrameProvider final : public hgs::service::ExternalFrameProvider {
+public:
+    bool Query(std::vector<hgs::service::ExternalFrameTarget>& targets) override {
+        std::vector<winehua::ZeroCopySurfaceInfo> surfaces;
+        if (!winehua::GraphicsBroker::GetInstance().QueryZeroCopySurfaces(surfaces)) return false;
+        targets.clear();
+        targets.reserve(surfaces.size());
+        for (const auto& surface : surfaces) {
+            targets.push_back({surface.surfaceKey, hgs::service::Protocol::X11, surface.surfaceId,
+                               surface.clientPid, surface.width, surface.height, surface.attached, surface.vulkan});
+        }
+        return true;
+    }
+    bool Bind(const hgs::service::ExternalFrameTarget& target, NativeWindow* producer, uint64_t periodNs) override {
+        auto& broker = winehua::GraphicsBroker::GetInstance();
+        if (!broker.AttachZeroCopyTarget(target.token, producer, periodNs, target.vulkan)) return false;
+        broker.SetZeroCopySurfaceReady(target.token, true);
+        return true;
+    }
+    void Unbind(const hgs::service::ExternalFrameTarget& target) override {
+        auto& broker = winehua::GraphicsBroker::GetInstance();
+        broker.SetZeroCopySurfaceReady(target.token, false);
+        broker.DetachZeroCopyTarget(target.token);
+    }
+};
+
 // ── HostLifecycleHooks → wine_process 转发 ─────────────────────────────────
 class WineHostHooks : public hgs::seam::HostLifecycleHooks
 {
@@ -96,6 +133,7 @@ public:
 };
 
 BrokerZeroCopyBackend g_zcBackend;
+WineX11FrameProvider g_x11FrameProvider;
 WineHostHooks g_hostHooks;
 
 // ── SessionControl 的 entry 侧访问点 (dlsym 查询 libhgs C 访问器) ───────────
@@ -150,13 +188,7 @@ private:
         if (resolve_ != nullptr) {
             return resolve_;
         }
-        void *sym = dlsym(RTLD_DEFAULT, "Hgs_getSessionControl");
-        if (sym == nullptr) {
-            void *handle = dlopen("libhgs.so", RTLD_NOW | RTLD_NOLOAD);
-            if (handle != nullptr) {
-                sym = dlsym(handle, "Hgs_getSessionControl");
-            }
-        }
+        void *sym = ResolveHgsSymbol("Hgs_getSessionControl");
         if (sym == nullptr) {
             if (!missLogged_) {
                 missLogged_ = true;
@@ -192,6 +224,19 @@ private:
 };
 
 } // namespace
+
+namespace winehua {
+bool ConfigureX11FrameProvider(bool enabled) {
+    using Register = decltype(&Hgs_setExternalFrameProvider);
+    auto set = reinterpret_cast<Register>(ResolveHgsSymbol("Hgs_setExternalFrameProvider"));
+    if (enabled) GraphicsBroker::GetInstance();
+    const bool configured = set && set(enabled ? &g_x11FrameProvider : nullptr);
+    if (enabled && !configured)
+        OH_LOG_WARN(LOG_APP, "HGS frame provider registration failed (%{public}s)",
+                    set ? "runtime active" : "symbol unavailable");
+    return configured;
+}
+}
 
 // ── 宿主注入变量 (libhgs 经 dlsym 运行时解析) ───────────────────────────────
 extern "C" {

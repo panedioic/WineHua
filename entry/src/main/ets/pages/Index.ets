@@ -6,6 +6,7 @@ import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { inputMethod } from '@kit.IMEKit';
 import { SegmentButton, SegmentButtonOptions } from '@kit.ArkUI';
 import { WineEnvService } from '../service/WineEnvService';
+import { X11ImeTarget } from '../service/X11ProbeWindowHost';
 import { ProcessService, ProcessInfo } from '../service/ProcessService';
 import { WineWindowManager } from '../service/WineWindowManager';
 import { DesktopModeService, MODE_VIRTUAL, MODE_FUSION } from '../service/DesktopModeService';
@@ -64,12 +65,21 @@ struct Index {
   private upgradeLogged: boolean = false;
   // -- IME 桥接 (Wine 文本框聚焦 → attach 弹软键盘 → insertText 注入 Wine) --
   private imeController: inputMethod.InputMethodController | null = null;
+  private x11ImeTarget: X11ImeTarget | null = null;
+  private imeSequence: number = 0;
 
   // 注册 C++ 侧激活回调: active=1 → attach 弹键盘, active=0 → 收起
   private setupIme(): void {
+    this.env.x11ProbeWindowHost.setImeListener((target: X11ImeTarget | null): void => {
+      const previous = this.x11ImeTarget;
+      this.x11ImeTarget = target;
+      if (target && !this.imeController) this.imeAttach();
+      else if (!target && previous) this.imeDetach();
+    });
     hgsNapi.setImeCallback((active: number, x: number, y: number, w: number, h: number) => {
       hilog.info(DOMAIN, 'IME-TEST', '[cb] active=%{public}d rect=[%{public}d,%{public}d %{public}dx%{public}d]',
         active, x, y, w, h);
+      if (this.x11ImeTarget) return;
       if (active === 1) {
         this.imeAttach();
       } else {
@@ -79,6 +89,7 @@ struct Index {
   }
 
   private imeAttach(): void {
+    const sequence = ++this.imeSequence;
     hilog.info(DOMAIN, 'IME-TEST', '[step] imeAttach begin');
     try {
       const controller = inputMethod.getController();
@@ -101,42 +112,49 @@ struct Index {
       };
       const cfg: inputMethod.TextConfig = { inputAttribute: attr };
       controller.attach(true, cfg).then(() => {
+        if (sequence !== this.imeSequence || this.imeController !== controller) return;
         hilog.info(DOMAIN, 'IME-TEST', '[attach] OK, registering on() callbacks');
         // attach 成功后注册事件 (12800009 detached 说明 on() 须在绑定后注册)
         controller.on('insertText', (text: string) => {
-          hilog.info(DOMAIN, 'IME-TEST', '[insertText] "%{public}s"', text);
-          hgsNapi.sendImeCommit(text);   // 提交文本 → Wine commit_string
+          const target = this.x11ImeTarget;
+          if (target) target.session.commitText(target.windowId, text);
+          else hgsNapi.sendImeCommit(text);
         });
         controller.on('deleteLeft', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteLeft] len=%{public}d', len);
-          hgsNapi.imeBackspace();        // 退格 → Wine KEY_BACKSPACE
+          if (this.x11ImeTarget) this.sendX11ImeKey(14, len);
+          else hgsNapi.imeBackspace();
         });
         controller.on('deleteRight', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteRight] len=%{public}d', len);
-          hgsNapi.imeBackspace();
+          if (this.x11ImeTarget) this.sendX11ImeKey(111, len);
+          else hgsNapi.imeBackspace();
         });
         controller.on('sendKeyboardStatus', (status: inputMethod.KeyboardStatus) => {
           hilog.info(DOMAIN, 'IME-TEST', '[keyboardStatus] %{public}d (NONE=0 HIDE=1 SHOW=2)', status);
         });
         controller.on('setPreviewText', (text: string, range: inputMethod.Range) => {
-          hilog.info(DOMAIN, 'IME-TEST', '[previewText] "%{public}s" range=[%{public}d,%{public}d]', text, range.start, range.end);
-          hgsNapi.sendImePreedit(text, range.start, range.end);  // 预上屏 → Wine preedit_string
+          if (!this.x11ImeTarget) hgsNapi.sendImePreedit(text, range.start, range.end);
         });
         // 回车补齐在 WineWindow.ets onKeyEvent 统一兜底 (系统吞 KeyDown 只派
         // KeyUp 时补发 down+up, 覆盖 IME 激活/非激活所有场景), 此处只留日志
         controller.on('sendFunctionKey', (fk: inputMethod.FunctionKey) => {
+          if (this.x11ImeTarget) this.sendX11ImeKey(28, 1);
           hilog.info(DOMAIN, 'IME-TEST', '[sendFunctionKey] enterKeyType=%{public}d (0 UNSPEC 6 DONE 8 NEWLINE)',
             fk.enterKeyType);
         });
       }).catch((err: BusinessError) => {
+        if (sequence === this.imeSequence) this.imeController = null;
         hilog.error(DOMAIN, 'IME-TEST', '[attach] FAILED code=%{public}d msg=%{public}s', err.code, err.message);
       });
     } catch (e) {
+      if (sequence === this.imeSequence) this.imeController = null;
       hilog.error(DOMAIN, 'IME-TEST', '[step] EXCEPTION: %{public}s', JSON.stringify(e));
     }
   }
 
   private imeDetach(): void {
+    ++this.imeSequence;
     hilog.info(DOMAIN, 'IME-TEST', '[step] imeDetach');
     const c = this.imeController;
     if (c) {
@@ -153,6 +171,15 @@ struct Index {
         hilog.error(DOMAIN, 'IME-TEST', '[detach] EXCEPTION: %{public}s', JSON.stringify(e));
       }
       this.imeController = null;
+    }
+  }
+
+  private sendX11ImeKey(evdevCode: number, count: number): void {
+    const target = this.x11ImeTarget;
+    if (!target) return;
+    for (let i = 0; i < Math.min(32, count); ++i) {
+      if (!target.session.sendInput(target.windowId, { kind: 'key', evdevCode: evdevCode, pressed: true })) break;
+      target.session.sendInput(target.windowId, { kind: 'key', evdevCode: evdevCode, pressed: false });
     }
   }
 

@@ -249,7 +249,11 @@ static void HandleRequest(int conn_fd)
         // (ohos_broker_spawn_child / loader.c 自启 wineserver) 都汇到 broker。
         // 统一登记使 explorer 里双击的 exe 出现在任务列表; App 侧调用者随后
         // 会用更准确的路径 AddProcess 覆盖 (AddProcess 同 pid 幂等)。
-        AddProcess(childPid, ParseProcessPath(fullParams.c_str()), -1);
+        struct ucred peer{};
+        socklen_t peerSize = sizeof(peer);
+        const pid_t requester = getsockopt(conn_fd, SOL_SOCKET, SO_PEERCRED, &peer, &peerSize) == 0
+            ? peer.pid : 0;
+        AddProcess(childPid, ParseProcessPath(fullParams.c_str()), -1, requester);
     }
 
     free(entryParamsCopy);
