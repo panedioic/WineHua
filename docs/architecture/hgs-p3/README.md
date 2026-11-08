@@ -18,4 +18,32 @@ WineHua 根据 HGS 的窗口事件创建和销毁 OHOS 子窗口，并将会话 
 
 禁用 X11、沿用 P1 Wine guest 的对照包也通过了真机 GDI 回归，见 `surface-wayland-device.log` 和 `surface-wayland-gdi-result.txt`。回归后已覆盖安装并启动 P1 签名包，见 `surface-restore-p1-install.log` 和 `surface-restore-p1-start.log`。
 
-本批使用每顶层窗口 CPU 拷贝呈现。键鼠的 OHOS 窗口回接、XIM、弹出层、窗口管理策略和外部 GPU 帧属于后续工作。
+## X11 子窗口输入
+
+WineHua 的 X11 子窗口启用了 `HgsWindowSurface.interactive`。组件复用 HGS 键码和鼠标键映射，把 OHOS 键盘、鼠标、滚轮和单指触摸送入会话的输入路由。Xwayland 在事件线程按当前 surface 尺寸转换归一化坐标。组件失焦时归还按键和按钮，窗口销毁时输入路由清除其所有权。
+
+真机测试使用 `uitest` 和 `uinput` 注入 OHOS 事件。Win32 探针收到触屏点击 (220,150)、字符 `a`、鼠标拖动至 (300,210)、左右键以及正反两个方向的滚轮消息。消息与断言见 `input-win32-messages.txt` 和 `input-verification.txt`。主机测试覆盖归一化坐标范围，以及窗口销毁后按键可在其他窗口重新按下。
+
+禁用 X11 的 Wayland 对照包通过 Win32 建窗验证，见 `input-wayland-device.log` 和 `input-wayland-result.txt`。随后已恢复 P1 签名包。
+
+## XIM 中文输入
+
+HGS 在启用 `HGS_BUILD_XIM` 并为会话设置 `imeServerName` 时启动独立的 XIM 子进程。子进程通过认证的 X11 端点注册输入法，HGS 随端点发布 `XMODIFIERS`。WineHua 为 Wine 提供其 guest Xlib locale 目录。HGS 以当前会话、窗口代次和 XIM 焦点校验文本提交，WineHua 在 `textInputActive` 变化时切换系统输入法目标。
+
+最小宿主真机验证覆盖 Xlib 握手、两个 X11 窗口的焦点切换、拒绝失焦和过期 ID 的提交，以及 `both` 重启后的重新连接和中文提交。WineHua 真机通过系统拼音键盘选词，Win32 编辑控件记录两次 `WM_IME_COMPOSITION` 的 `GCS_RESULTSTR`，最终内容逐字符匹配。证据见 `xim-verify/minimal-device-report.log`、`xim-verify/wine-e2e-result.txt` 和 `xim-verify/wine-e2e-editor.jpeg`。
+
+XIM 当前提交已确认文本，预编辑和候选由系统输入法管理。
+
+## X11 外部 GPU 帧
+
+WineHua 将 GraphicsBroker 注册成 HGS 的可选帧提供者。HGS 根据 XID、客户端 PID 和窗口代次选择帧源，使用 OH_NativeImage 和 EGL 在绑定的 OHOS Surface 上呈现。帧源尚未就绪、失败或解绑时回到 pixman CPU 路径。
+
+同设备签名包完成 WGL 四象限方向校验、Vulkan 840 帧呈现以及 GDI 回退。证据见 `gpu-verify/flip-trace.log`、`gpu-verify/wgl-flip-screen.jpeg`、`gpu-verify/vulkan-fixed-final.json` 和 `gpu-verify/gdi-result.txt`。Vulkan 探针使用单色图案，覆盖上屏与帧计数。
+
+## X11 虚拟桌面
+
+虚拟桌面沿 X11 顶层窗口路径呈现。WineHua 从屏幕尺寸与有效缩放计算 HGS 逻辑输出，再把端点的尺寸交给 Wine explorer。Wine loader 可通过 broker 另起实际的 explorer.exe。Broker 从 Unix socket 的对端凭据记录请求者 PID，WineHua 用这份关系校验 X11 窗口的所属进程，并等到其 OHOS Surface 首帧后发出桌面就绪事件。
+
+在 2880×1920、缩放为 2 的设备上，桌面按 1440×960 上屏。早期包在 launcher 和实际 explorer PID 不同时一直等待，见 `desktop-verify-retry-20261108/device-diagnostic-mainpid-53991.log`。修复后，首帧与 `evt:desktop-ready` 同刻出现，即使 launcher 和实际窗口 PID 不同。
+
+冷启动携带 Notepad 请求时，引擎启动一次，14:33:48.285 发出首帧就绪，14:33:48.510 受理 Notepad 启动。截图显示 Notepad 位于 Wine 桌面内。证据见 `desktop-verify-pidmatch-20261108/device-coldstart-notepad-full.log` 和 `desktop-verify-pidmatch-20261108/p3-notepad-coldstart.jpeg`。

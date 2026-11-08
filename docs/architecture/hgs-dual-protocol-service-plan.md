@@ -2,7 +2,7 @@
 
 日期：2026-11-06。状态：规划，未实施代码迁移。
 
-执行进度：P0 基线采集与归档已完成，两套主机测试、构建签名和同设备 Wayland/X11 图形及窗口/输入回归已留档。完整 Mono 首启、X11 帧归还同步及部分功能仍有失败；X11 功能测试采用独立无 Mono 配置，不代表产品全绿。P1 公共服务边界、构建及本轮设备验证已完成，Vulkan 稳定性验收仍开放；P2 的真实 X11 后端已通过最终最小宿主真机验证，覆盖异步启停、启动回滚、重连和双端点监听。详见 [P2 实施账本](hgs-p2/README.md)。P3 已接通 Wine 子进程的显示环境和 X11 顶层窗口的 OHOS Surface 呈现，真机验证了 Win32 建窗、GDI 读回、屏幕重绘和窗口销毁。XIM、外部 GPU 帧和窗口交互仍待接入。详见 [P3 实施记录](hgs-p3/README.md)。结果见 [P0 基线账本](hgs-p0/README.md) 和 [P1 实施账本](hgs-p1/README.md)。
+执行进度：P0 基线采集与归档已完成，两套主机测试、构建签名和同设备 Wayland/X11 图形及窗口/输入回归已留档。完整 Mono 首启、X11 帧归还同步及部分功能仍有失败；X11 功能测试采用独立无 Mono 配置，不代表产品全绿。P1 公共服务边界、构建及本轮设备验证已完成，Vulkan 稳定性验收仍开放；P2 的真实 X11 后端已通过最终最小宿主真机验证，覆盖异步启停、启动回滚、重连和双端点监听。详见 [P2 实施账本](hgs-p2/README.md)。P3 已接通 Wine 子进程的显示环境、X11 顶层窗口的 OHOS Surface 呈现和子窗口输入，真机验证了 Win32 建窗、GDI 读回、屏幕重绘、窗口销毁和键鼠事件。XIM 已通过 Xlib 和 WineHua 真机中文提交验收。外部 GPU 帧通过了真机 WGL、Vulkan 和 GDI 回退验证。X11 虚拟桌面已通过按逻辑输出上屏、首帧就绪与冷启动 Notepad 的真机回归。P4 默认宿主通过了 Wayland GTK 与 X11 同时呈现、交替键鼠输入、缩放、弹窗与模态、关闭及原会话双路重连。详见 [P3 实施记录](hgs-p3/README.md)。结果见 [P0 基线账本](hgs-p0/README.md) 和 [P1 实施账本](hgs-p1/README.md)。
 
 本文依据 `docs/HANDOVER.md`，并核对以下本地代码，不把历史设计稿中的目标当作已实现能力：
 
@@ -456,6 +456,20 @@ P2→P3 的外部帧接口必须按已有真实方法设计；不能为了先搬
 | 任意模式生命周期 | 无画布启动、画布晚到、重建/旋转、关闭最后窗口后重连、重复启停 |
 
 GPU 验收分别记录 producer FPS、present FPS、CPU/GPU 搬运路径、槽位/帧引用与同步计数；使用同设备同场景基线。历史已知失败单独列出，不把迁移验收中的新失败归入旧问题，也不把历史通过当作本次已经测试。
+
+### P4 默认窗口宿主实测
+
+独立宿主通过 `HgsWindowHostService.startService` 启动 both，使用同一会话的两套端点分别运行 GTK 3.24.43（GdkWaylandDisplay）和 Xlib 探针。两种包装页均以 `useSharedStorage: true` 接收各自实例的窗口身份。X11 窗口首帧上屏，GTK 窗口动画同时可见。证据位于 `/workspace/WineHua-root/WineHua/build/hgs-p4/both-verify/`，见 `gtk7-screen.jpeg` 和 `gtk7-initial.log`。
+
+GTK 收到真实指针点击，X11 客户端记录焦点进出、按键和鼠标点击。OHOS 关闭 X11 窗口触发客户端的 WM_DELETE，GTK 窗口继续存在。X11 override-redirect popup 与 transient modal 都上屏，快照均指向对应的父 WindowId。证据见 `gtk7-final-report.log`、`gtk8-popup-report.log` 和 `gtk8-modal-report.log`。
+
+OHOS 边缘拖拽使 X11 客户端收到从 480×280 到 705×430 的 ConfigureNotify，GTK 窗口也完成拖拽缩放。分别关闭某一协议的最后一个窗口时，另一协议的窗口仍存在。新客户端在原 epoch 重连，获得新的客户端和窗口 ID。GTK 使用客户端标题栏关闭，X11 使用 OHOS 标题栏关闭。
+
+将 GTK 移至 launcher 窗口覆盖区之外后，真实按键按 X11 → GTK → X11 的顺序到达各自客户端，GTK entry 收到 `b`。X11 菜单收到发给自身 XID 的点击，模态窗打开后父窗未收到同次点击或按键，模态窗收到按键与 WM_DELETE。两个协议的最后窗口都关闭后，两个客户端仍在原 epoch 重连，并获得新的连接和窗口 ID。证据见 `interactive-final.log`、`interactive-popup-modal-final.log` 和 `interactive-alternate2.jpeg`。
+
+实测发现 XWM 的 MapNotify 可能先于初始属性读取，将默认状态写回并丢失客户端预设的模态标志。HGS 在 map_request 读取初始模态属性。修复后的三轮测试均在 Created 事件得到正确 parentId 与 modal 标志，含同一 epoch 断连后新客户端创建的模态窗。已映射窗口也通过 EWMH ADD/REMOVE 完成 false → true → false 的模态切换，窗口 ID 保持一致，两次重新绑定 OHOS Surface 后均恢复呈现。证据见 `modal-fix-final.log`、`modal-dynamic-add-events.log` 和 `modal-dynamic-remove-events.log`。
+
+GTK 的 data-device 能力覆盖了 seat 初始化和真实输入，跨协议剪贴板单独验收。HGS 和 WineHua 主机测试已通过。
 
 最强的解耦验收是 minimal-host：不链接 WineHua 的 entry、不含 Wine 引擎包、不引用 BetterSH 路径，只安装 HGS 服务资源，三种模式都能启动并监听。单靠源文件移动不能满足这个标准。
 
