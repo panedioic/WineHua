@@ -72,3 +72,5 @@ entry/src/main/cpp/protocols/winehua-toplevel-*
 # Python caches
 __pycache__/
 *.pyc
+
+/harmony-sdk/
