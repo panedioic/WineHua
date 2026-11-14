@@ -29,6 +29,7 @@ struct WineWindow {
       HgsSurface({
         xcId: 'wine_sub_xc',
         toplevelId: this.toplevelId,
+        keyboardTarget: this.toplevelId,
         onSurfaceCreatedCallback: (sid: string, id: number) => {
           hilog.info(DOMAIN, 'WineWindow', '[Ctrl] onSurfaceCreated tl=%{public}d surfaceId=%{public}s', id, sid);
           try { hgsNapi.createRenderer(id, BigInt(sid)); } catch (_) {}

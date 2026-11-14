@@ -138,6 +138,9 @@ export struct DesktopLayer {
       HgsSurface({
         xcId: 'wine_desktop_xc',
         resolveId: () => WineWindowManager.getInstance().getDesktopRootId(),
+        mouseMode: 'desktop',
+        floating: this.floating,
+        scaleRawDelta: true,
         onSurfaceCreatedCallback: (sid: string, id: number) => {
           this.lastRootId = id;
           try { hgsNapi.createRenderer(id, BigInt(sid)); } catch (_) {}
