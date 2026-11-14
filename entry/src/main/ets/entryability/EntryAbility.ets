@@ -5,6 +5,7 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { WineWindowManager } from '../service/WineWindowManager';
 import { WineEnvService } from '../service/WineEnvService';
 import { DesktopModeService } from '../service/DesktopModeService';
+
 // [[SMOKE]] 合并到 main-ui: 删本行与 publishLaunchRequest 内的 applyWant 调用
 import { SmokeHook } from '../smoke/SmokeHook';
 import testNapi from 'libentry.so';
@@ -12,6 +13,8 @@ import testNapi from 'libentry.so';
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
+  // 显示路线首施标记: onCreate 应用缺省/显式值后置位, onNewWant 无参重拉
+  // 不再重复应用 (见 publishLaunchRequest 的 route 段注释)
   private defaultDxvkBackend(): string {
     /* This is an evidence allowlist, not a Host-to-Guest capability inference.
      * The bundled Guest Mesa/DXVK payload is fixed by the HAP manifest, while
@@ -39,7 +42,10 @@ export default class EntryAbility extends UIAbility {
     };
     const explicitD3d = !!parameters && parameters['winehua.d3d_backend'] !== undefined &&
       parameters['winehua.d3d_backend'] !== null;
-    const persistedD3dRaw = AppStorage.get<string>('winehua.d3d.preference') || 'vkd3d_limited_500k';
+    /* 产品默认档 = DXVK 2.6.2 (2026-10-11 用户拍板, 原 vkd3d_limited_500k
+     * 组合降为手动可选)。选 dxvk 档时 dxvk 轴随之强制 modern (见下方),
+     * dxvk 轴的 auto 白名单仅在 vkd3d 组合档下参与解析。 */
+    const persistedD3dRaw = AppStorage.get<string>('winehua.d3d.preference') || 'dxvk_modern_2_6';
     const requestedD3d = explicitD3d ? value('winehua.d3d_backend', 'wined3d') : persistedD3dRaw;
     const d3dBackend = requestedD3d === 'dxvk_legacy' ||
       requestedD3d === 'dxvk_modern_2_6' || requestedD3d === 'vkd3d_limited_500k' ?
@@ -61,7 +67,18 @@ export default class EntryAbility extends UIAbility {
     const explicitFusionHost = !!parameters && parameters['winehua.fusionHost'] !== undefined &&
       parameters['winehua.fusionHost'] !== null;
     if (explicitFusionHost) {
-      AppStorage.set<string>('winehua.fusionHost', value('winehua.fusionHost', ''));
+      // M4d-review I2 实测: 原 AppStorage.set 对不存在的键是静默 no-op（全仓
+      // 无人 setOrCreate/'@StorageLink' 建过该键），调试键从未生效 —— 2026-10-11
+      // Pad 真机: --ps winehua.fusionHost ability 冷启后 FWM 仍建 subWindow。
+      // 改 setOrCreate（与上方 d3d/dxvk.backend 同款双写模式）。
+      AppStorage.setOrCreate<string>('winehua.fusionHost', value('winehua.fusionHost', ''));
+    }
+    // [[任务#129 装饰实验]] 裸 decor subWindow 测试开关 (消费在
+    // onWindowStageCreate 的 loadContent 回调, 仅显式 want 生效不持久化)
+    const explicitTestDecor = !!parameters && parameters['winehua.testDecor'] !== undefined &&
+      parameters['winehua.testDecor'] !== null;
+    if (explicitTestDecor) {
+      AppStorage.setOrCreate<string>('winehua.testDecor', value('winehua.testDecor', ''));
     }
     // 桌面模式显式覆盖 (fusion|virtual): 仅在 applyModePolicy 判定读取, 不持久化
     // (重启引擎场景仍按持久化值)。经 DesktopModeService 单例传递 — AppStorage
@@ -71,15 +88,28 @@ export default class EntryAbility extends UIAbility {
     if (explicitDesktopMode) {
       DesktopModeService.getInstance().setOverrideMode(value('winehua.desktopMode', ''));
     }
+    DesktopModeService.getInstance().init(this.context);
     // 自动化通道 (UI 点击/输入不可注入设备的全自动验证):
     // winehua.autoStart=1 → 主页面就绪后自动拉起引擎 (一次消费)
     if (parameters && parameters['winehua.autoStart'] === '1') {
       WineEnvService.getInstance().autoStartPending = true;
     }
+    const protocol = value('winehua.displayProtocol', value('winehua.displayRoute', ''));
+    if (protocol === 'x11' || protocol === 'wayland') {
+      WineEnvService.getInstance().setDisplayOverride(protocol);
+    } else if (parameters && parameters['winehua.hgsX11Probe'] !== undefined) {
+      // 旧自动化入口仍可复用同一显示协议设置。
+      WineEnvService.getInstance().setDisplayOverride(parameters['winehua.hgsX11Probe'] === '1' ? 'x11' : 'wayland');
+    }
     // winehua.program=<wine 路径> → 引擎就绪后自动启动该程序
     if (parameters && parameters['winehua.program'] !== undefined &&
       parameters['winehua.program'] !== null) {
       WineEnvService.getInstance().setAutoProgram(value('winehua.program', ''));
+    }
+    // winehua.env=<K=V;K=V> → 直启程序追加环境 (调试通道, 见 runProgram)
+    if (parameters && parameters['winehua.env'] !== undefined &&
+      parameters['winehua.env'] !== null) {
+      AppStorage.setOrCreate<string>('winehua.env', value('winehua.env', ''));
     }
     // [[SMOKE]] 合并到 main-ui: 删本行 (want 的模式/套件/前缀等 smoke 参数解析
     // 在 SmokeHook, 模式非 smoke 时零行为)
@@ -109,7 +139,11 @@ export default class EntryAbility extends UIAbility {
           }
           return;
         }
-        if (++tries < 60) {  // ~60s 上限 (首次初始化含 wineboot)
+        // 外层重试只是兜底 ensureEngineReady 返回 false 的情形 (busy/failed);
+        // 引擎 starting 时 ensureEngineReady 自己会 restartEngine 并等 300s。
+        // 上限与其 deadline 对齐: 60s 曾早于全新安装首启实测耗时 (74s,
+        // 2026-10-06 23:20:39 'skip' 复现), 直启被静默跳过。
+        if (++tries < 300) {
           setTimeout(tick, 1000);
         } else {
           hilog.warn(DOMAIN, 'testTag', 'autoRun: engine not ready after %{public}d tries, skip %{public}s',
@@ -127,18 +161,28 @@ export default class EntryAbility extends UIAbility {
   private runProgram(windowsPath: string): void {
     const slash = windowsPath.lastIndexOf('/');
     const dir = slash > 0 ? windowsPath.substring(0, slash) : windowsPath;
+    // winehua.env=<K=V;K=V>: 直启程序的追加环境。调试通道 (D50 WINEDEBUG
+    // 等排查), 非产品语义 —— ';' 分隔, 值内不容 ';'。
+    const environment: Record<string, string> = {};
+    const envSpec = AppStorage.get<string>('winehua.env') ?? '';
+    for (const pair of envSpec.split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq > 0) {
+        environment[pair.substring(0, eq)] = pair.substring(eq + 1);
+      }
+    }
     testNapi.runWineProgram({
       windowsExePath: windowsPath,
       argv: [],
-      environment: {},
+      environment: environment,
       workingDirectory: dir,
-      d3dBackend: AppStorage.get<string>('winehua.d3d.backend') ?? 'vkd3d_limited_500k',
+      d3dBackend: AppStorage.get<string>('winehua.d3d.backend') ?? 'dxvk_modern_2_6',
       dxvkBackend: AppStorage.get<string>('winehua.dxvk.backend') ?? 'auto'
     });
   }
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    PersistentStorage.persistProp<string>('winehua.d3d.preference', 'vkd3d_limited_500k');
+    PersistentStorage.persistProp<string>('winehua.d3d.preference', 'dxvk_modern_2_6');
     PersistentStorage.persistProp<string>('winehua.dxvk.preference', 'auto');
     // 注: Wine 语言偏好不走 PersistentStorage (冷启动不恢复磁盘值, 实测),
     // 由 WineEnvService.init 用 preferences API 自行加载
@@ -188,6 +232,7 @@ export default class EntryAbility extends UIAbility {
 
     // 初始化多窗口管理器
     WineWindowManager.getInstance().init(windowStage, this.context);
+    WineEnvService.getInstance().x11ProbeWindowHost.setStage(windowStage);
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
@@ -200,6 +245,43 @@ export default class EntryAbility extends UIAbility {
         mainWin.setWindowDecorVisible(false);
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      // [[任务#129 装饰实验]] winehua.testDecor=1 → 弹两个带真实内容的装饰
+      // 测试窗对照 (无内容子窗整窗不合成 —— 前几轮「shown 但不可见」即此):
+      // A) stage 子窗 createSubWindowWithOptions(decorEnabled:true)
+      // B) window.createWindow TYPE_DIALOG + decorEnabled:true
+      // decor 参数之外只有让窗可见的最小配置 (尺寸/位置/静态内容页)。
+      // 测试代码, 结论落地后随 DecorTestPage 一并删除。
+      if (AppStorage.get<string>('winehua.testDecor') === '1') {
+        windowStage.createSubWindowWithOptions('decor_test', {
+          title: 'DECOR TEST',
+          decorEnabled: true
+        }).then(async (sw: window.Window) => {
+          hilog.info(DOMAIN, 'testTag', '[DECOR-TEST] A stage subWindow created id=%{public}d', sw.getWindowProperties().id);
+          await sw.resize(700, 500);
+          await sw.moveWindowToGlobal(200, 300);
+          await sw.loadContent('pages/DecorTestPage');
+          await sw.showWindow();
+          hilog.info(DOMAIN, 'testTag', '[DECOR-TEST] A stage subWindow shown');
+        }).catch((e: Error) => {
+          hilog.error(DOMAIN, 'testTag', '[DECOR-TEST] A FAILED: %{public}s', JSON.stringify(e));
+        });
+        window.createWindow({
+          name: 'decor_test_dialog',
+          windowType: window.WindowType.TYPE_DIALOG,
+          ctx: this.context,
+          decorEnabled: true,
+          title: 'DIALOG DECOR TEST'
+        } as window.Configuration).then(async (dw: window.Window) => {
+          hilog.info(DOMAIN, 'testTag', '[DECOR-TEST] B dialog created id=%{public}d', dw.getWindowProperties().id);
+          await dw.resize(700, 500);
+          await dw.moveWindowToGlobal(900, 700);
+          await dw.loadContent('pages/DecorTestPage');
+          await dw.showWindow();
+          hilog.info(DOMAIN, 'testTag', '[DECOR-TEST] B dialog shown');
+        }).catch((e: Error) => {
+          hilog.error(DOMAIN, 'testTag', '[DECOR-TEST] B FAILED: %{public}s', JSON.stringify(e));
+        });
+      }
       // 自动化通道 (冷启动): winehua.program → 引擎就绪后直启该程序
       // (winehua.autoStart 的消费在 Index.aboutToAppear)
       this.autoRunIfRequested();
@@ -207,6 +289,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
+    WineEnvService.getInstance().x11ProbeWindowHost.setStage(null);
     // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }

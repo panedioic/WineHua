@@ -1,5 +1,7 @@
 # WineHua / HGS 交接文档
 
+当前工作分支为 `feature/using-hgs`。最新的上游合并、差异取舍和验证见 [上游同步与 PR 审查](architecture/hgs-upstream-sync.md)。下文保留 11 月 6 日迁移基线。
+
 > 最后核实：2026-11-06
 >
 > 适用仓库与分支：

@@ -1,10 +1,11 @@
 import testNapi from 'libentry.so';
 import hgsNapi from 'libhgs.so';
 import smokeNapi from 'libsmoke_napi.so';
+import { HgsServiceInput } from 'hgs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   WineEnvService, DRIVE_C, readTextIfExists,
-  ensureDirectory, writeTextFile
+  ensureDirectory, removeFileIfExists, writeTextFile
 } from '../service/WineEnvService';
 import { SmokeJob, SmokeJobParams, SmokeRequest, SmokeSuiteTest,
   InjectSpec, InjectAction } from './SmokeTypes';
@@ -154,6 +155,12 @@ export class SmokeRunner {
       // 测试清单来源 (job > suites.json): inline 自带完整定义不读 suites.json;
       // tests 是在 suite 上的过滤; 都没有则跑整个 suite
       const job: SmokeJob | undefined = request.job;
+      if (job?.displayroute && !envSvc.x11ProbeWindowHost.getSession()) {
+        await this.finishSuite(request, [
+          this.failure(request, 'suites', '需要已启动的 HGS X11 会话，请使用 --display-route x11', -1)
+        ]);
+        return;
+      }
       let tests: SmokeSuiteTest[] = [];
       if (job && job.inline && job.inline.length > 0) {
         tests = job.inline;
@@ -284,6 +291,10 @@ export class SmokeRunner {
       test.testId, winPath, seconds, resolvedTimeout, d3dBackend);
     const dxvkBackend: string = params.dxvkBackend ? params.dxvkBackend :
       (test.dxvkBackend ? test.dxvkBackend : envSvc.getDxvkBackend());
+    if (test.inject) {
+      removeFileIfExists(`${DRIVE_C}/smoke/inject-request-${test.testId}.json`);
+      removeFileIfExists(`${DRIVE_C}/smoke/inject-done-${test.testId}.json`);
+    }
     const process = testNapi.runWineProgram({
       windowsExePath: winPath,
       argv: argv,
@@ -294,6 +305,29 @@ export class SmokeRunner {
     }) as RunProgramResult;
     if (!process || process.pid <= 0) {
       return this.failure(request, 'startup', `runWineProgram failed: ${winPath}`, -1, test.testId);
+    }
+    // 载体用例 (judge='external'): 真应用写不出结果文件, 等文件必然拖满 timeout
+    // 并被判成失败 —— 那是把"无自报"误判成"没跑成"。这里只跑声明的时长窗口,
+    // 到点结束进程, 落一条 status=SKIP 的"无结论"结果: 设备端不判定, 行为判定
+    // 归编排 (displayroute 注入脚本) 与外部证据。
+    if (test.judge === 'external') {
+      const windowMs: number = (seconds > 0 ? seconds : 60) * 1000;
+      hilog.info(DOMAIN, TAG, 'external vehicle test=%{public}s window=%{public}dms pid=%{public}d',
+        test.testId, windowMs, process.pid);
+      await new Promise<void>((r) => setTimeout(r, windowMs));
+      const alive = testNapi.queryWineProcess(process.pid) as ProcessSnapshot;
+      if (alive.found && alive.status === 'running') {
+        testNapi.terminateWineProcess(process.pid);
+      }
+      writeTextFile(resultPath, JSON.stringify({
+        schemaVersion: 1, runId: request.runId, testId: test.testId,
+        status: 'SKIP', stage: 'external-vehicle',
+        message: '载体用例: 无自报结论 (判定在编排/外部证据)', seconds: seconds
+      }));
+      return {
+        schemaVersion: 1, runId: request.runId, testId: test.testId,
+        status: 'SKIP', stage: 'external-vehicle', pid: process.pid
+      };
     }
     // 子进程死了 (崩溃/被杀) 就不会再有结果文件, 只盯文件的轮询会把崩溃拖满
     // 整个 timeout, 失败信息只剩一句"轮询超时", 崩溃原因整个丢掉。查一次
@@ -347,6 +381,18 @@ export class SmokeRunner {
   // 已处理完注入的 testId（同一轮询循环内只编排一次）
   private injectHandled: Set<string> = new Set();
 
+  private async waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const snap = testNapi.queryWineProcess(pid) as ProcessSnapshot;
+      if (!snap.found || snap.status !== 'running') {
+        return true;
+      }
+      await new Promise<void>((r) => setTimeout(r, 100));
+    }
+    return false;
+  }
+
   // C 型注入编排: 等 guest 的 inject-request-<testId>.json（guest 声明希望
   // 被注入的序列）→ 逐条 smokeMapPoint 换算 + findToplevelAt 定位 +
   // sendPointerEvent 注入（与 ArkTS 触摸同语义: raiseToplevel + Press/Release）
@@ -358,6 +404,8 @@ export class SmokeRunner {
     const raw: string = readTextIfExists(reqPath);
     if (!raw) return;
     this.injectHandled.add(test.testId);
+    this.lastInjectTl = 0;
+    this.lastX11Window = '';
 
     let status: string = 'ok';
     let message: string = '';
@@ -393,6 +441,71 @@ export class SmokeRunner {
 
   // type/ime 动作复用上一个 mouse 动作解析出的 toplevel（键盘焦点窗口）
   private lastInjectTl: number = 0;
+  private lastX11Window: string = '';
+
+  private sendX11(windowId: string, input: HgsServiceInput): boolean {
+    return WineEnvService.getInstance().x11ProbeWindowHost.getSession()?.sendInput(windowId, input) ?? false;
+  }
+
+  private async injectX11(action: InjectAction): Promise<string> {
+    const host = WineEnvService.getInstance().x11ProbeWindowHost;
+    const session = host.getSession();
+    if (!session) return 'X11 session is unavailable';
+    if (action.type === 'key') {
+      if (!this.lastX11Window || action.code === undefined) return 'X11 key action needs a focused window and a key';
+      if (!this.sendX11(this.lastX11Window, { kind: 'key', evdevCode: action.code, pressed: true }))
+        return 'X11 key press rejected';
+      await new Promise<void>((resolve) => setTimeout(resolve, 30));
+      return this.sendX11(this.lastX11Window, { kind: 'key', evdevCode: action.code, pressed: false })
+        ? '' : 'X11 key release rejected';
+    }
+    if (action.type === 'type') return this.injectTyping(action.text ?? '');
+    if (action.type === 'ime') {
+      return this.lastX11Window && session.commitText(this.lastX11Window, action.text ?? '')
+        ? '' : 'X11 IME target is unavailable';
+    }
+    const window = host.findSmokeWindow(action.title);
+    if (!window) return 'X11 window is unavailable';
+    const x = action.title ? Math.round(window.width / 2) : (action.x ?? 0);
+    const y = action.title ? Math.round(window.height / 2) : (action.y ?? 0);
+    const button = mapMouseButton(action.button === 'right' ? 2 : 1);
+    this.lastX11Window = window.id;
+    if (action.type === 'wheel') {
+      const notches = action.notches ?? 3;
+      for (let i = 0; i < Math.abs(notches); ++i) {
+        if (!this.sendX11(window.id, { kind: 'scroll', x: x, y: y, axis: 0, value: Math.sign(notches) }))
+          return 'X11 scroll rejected';
+      }
+      return '';
+    }
+    if (!this.sendX11(window.id, { kind: 'pointer', action: 3, x: x, y: y, button: button }))
+      return 'X11 motion rejected';
+    if (action.type === 'swipe') {
+      const steps = Math.max(1, action.steps ?? 10);
+      const hold = action.button === 'left' || action.button === 'right';
+      const dx = action.dx ?? 0;
+      const dy = action.dy ?? 0;
+      if (hold && !this.sendX11(window.id, { kind: 'pointer', action: 1, x: x, y: y, button: button }))
+        return 'X11 swipe press rejected';
+      for (let i = 1; i <= steps; ++i) {
+        this.sendX11(window.id, { kind: 'pointer', action: 3, x: x + i * dx / steps,
+          y: y + i * dy / steps, button: button });
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      }
+      if (hold && !this.sendX11(window.id, { kind: 'pointer', action: 2, x: x + dx, y: y + dy, button: button }))
+        return 'X11 swipe release rejected';
+      return '';
+    }
+    const presses = action.type === 'doubleClick' ? 2 : 1;
+    for (let i = 0; i < presses; ++i) {
+      if (!this.sendX11(window.id, { kind: 'pointer', action: 1, x: x, y: y, button: button }))
+        return 'X11 pointer press rejected';
+      await new Promise<void>((resolve) => setTimeout(resolve, 30));
+      if (!this.sendX11(window.id, { kind: 'pointer', action: 2, x: x, y: y, button: button }))
+        return 'X11 pointer release rejected';
+    }
+    return '';
+  }
 
   private async injectAction(action: InjectAction): Promise<string> {
     if (action.type === 'sleep') {
@@ -400,6 +513,7 @@ export class SmokeRunner {
       await new Promise<void>((r) => setTimeout(r, ms));
       return '';
     }
+    if (WineEnvService.getInstance().x11ProbeWindowHost.getSession()) return this.injectX11(action);
     if (action.type === 'type') {
       return this.injectTyping(action.text ? action.text : '');
     }
@@ -488,7 +602,7 @@ export class SmokeRunner {
   // ASCII 子集展开为 evdev 键序: a-z / A-Z(shift) / 0-9。
   // KEY_1=2..KEY_0=11, KEY_A=30..KEY_Z=44 (Linux include/uapi/input-event-codes.h)
   private async injectTyping(text: string): Promise<string> {
-    if (!this.lastInjectTl) return 'type action without a prior mouse action (no focus target)';
+    if (!this.lastInjectTl && !this.lastX11Window) return 'type action without a prior mouse action (no focus target)';
     for (let i = 0; i < text.length; i++) {
       const ch: string = text.charAt(i);
       const code: number = ch >= 'a' && ch <= 'z' ? 30 + (ch.charCodeAt(0) - 97) :
@@ -498,14 +612,19 @@ export class SmokeRunner {
       if (code < 0) return `unsupported char '${ch}' (ascii subset only)`;
       const needShift: boolean = ch >= 'A' && ch <= 'Z' || ch === '_';
       const tl: number = this.lastInjectTl;
-      if (needShift) hgsNapi.sendKeyEvent(tl, 42, true);  // KEY_LEFTSHIFT
-      hgsNapi.sendKeyEvent(tl, code, true);
+      if (needShift) this.sendTypingKey(tl, 42, true);
+      this.sendTypingKey(tl, code, true);
       await new Promise<void>((r) => setTimeout(r, 30));
-      hgsNapi.sendKeyEvent(tl, code, false);
-      if (needShift) hgsNapi.sendKeyEvent(tl, 42, false);
+      this.sendTypingKey(tl, code, false);
+      if (needShift) this.sendTypingKey(tl, 42, false);
       await new Promise<void>((r) => setTimeout(r, 30));
     }
     return '';
+  }
+
+  private sendTypingKey(toplevel: number, code: number, pressed: boolean): void {
+    if (this.lastX11Window) this.sendX11(this.lastX11Window, { kind: 'key', evdevCode: code, pressed: pressed });
+    else hgsNapi.sendKeyEvent(toplevel, code, pressed);
   }
 
   private async injectMouse(action: InjectAction): Promise<string> {

@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/prctl.h>
+#include "wine/display_environment.h"
 #include "wine/wine_constants.h"
 #include "wine/wine_env.h"
 #include <fcntl.h>
@@ -180,13 +181,13 @@ static const char *active_wine_prefix()
     return prefix && prefix[0] ? prefix : WINE_PREFIX;
 }
 
-static void refresh_wine_session_paths()
+static void refresh_wine_session_paths(bool preserveRuntimeDir = false)
 {
     const char *prefix = active_wine_prefix();
     std::string brokerPath(prefix);
     const size_t slash = brokerPath.find_last_of('/');
 
-    setenv("XDG_RUNTIME_DIR", prefix, 1);
+    if (!preserveRuntimeDir) setenv("XDG_RUNTIME_DIR", prefix, 1);
     if (slash == std::string::npos)
         brokerPath = ".wine_broker";
     else
@@ -260,10 +261,9 @@ static bool derive_launch_cwd(int argc, char *argv[], const char *homeDir, std::
     return false;
 }
 
-static const char *select_winedebug_profile(int argc, char *argv[])
+static const char *select_winedebug_profile(int argc, char *argv[],
+                                            const char *override)
 {
-    const char *override = getenv("WINEHUA_WINEDEBUG");
-
     if (override && override[0]) return override;
     if (is_audio_test_exe(argc, argv)) return midi_diag_winedebug_profile();
     if (is_sdl_audio_test_exe(argc, argv)) return sdl_audio_diag_winedebug_profile();
@@ -332,7 +332,10 @@ static void apply_entry_param_env_overrides(const std::vector<std::string>& envO
                         value.c_str());
             continue;
         }
-        setenv(key.c_str(), value.c_str(), 1);
+        if (value.empty() && winehua::IsDisplayEnvironmentKey(key))
+            unsetenv(key.c_str());
+        else
+            setenv(key.c_str(), value.c_str(), 1);
         if (key == "WINEHUA_BOOTSTRAP_PHASE" || key.rfind("BOX64_DYNAREC_", 0) == 0)
             OH_LOG_INFO(LOG_APP, "[WineChild] env override %{public}s=%{public}s",
                         key.c_str(), value.c_str());
@@ -455,7 +458,18 @@ extern "C" void Main(NativeChildProcess_Args args)
                 homeDir ? homeDir : "(null)", binDir, argc, argc > 0 ? argv[0] : "(none)");
 
     // 2. Step A: 设置 Wine 环境变量 baseline (硬编码默认值, 确保非 broker 路径可用)
-    const char *winedebug = select_winedebug_profile(argc, argv);
+    // WINEHUA_WINEDEBUG 的显式诊断值允许随 __env (per-app job env) 下发: 它的
+    // 消费点在 setup_wine_env (先于覆盖应用), 故从覆盖列表提前摘取传参——
+    // profile 决策点不变, 只是取值时机提前到覆盖可见处。
+    std::string winedebugOverride;
+    for (const std::string& envLine : envOverrides)
+    {
+        const char kKey[] = "WINEHUA_WINEDEBUG=";
+        if (envLine.compare(0, sizeof(kKey) - 1, kKey) == 0)
+            winedebugOverride = envLine.substr(sizeof(kKey) - 1);
+    }
+    const char *winedebug = select_winedebug_profile(argc, argv,
+                                                     winedebugOverride.c_str());
     OH_LOG_INFO(LOG_APP, "[WineChild] WINEDEBUG=%{public}s", winedebug);
     setup_wine_env(binDir, homeDir, winedebug);
 
@@ -480,7 +494,8 @@ extern "C" void Main(NativeChildProcess_Args args)
     // WINEPREFIX is a per-session override. Derive paths only after the final
     // value is known, and avoid a "prefix/../" path whose intermediate prefix
     // may not exist after a clean install.
-    refresh_wine_session_paths();
+    const char* displayRoute = getenv("WINEHUA_DISPLAY_ROUTE");
+    refresh_wine_session_paths(displayRoute && strcmp(displayRoute, "wayland") == 0);
 
     log_d3d_environment_summary();
 

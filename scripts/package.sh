@@ -127,6 +127,55 @@ with open('$profile', 'w') as f:
     log "abiFilters: [$abi_value]"
 }
 
+# Hvigor reads native CMake arguments from the source HAR profile.
+# Restore the source HAR profile when packaging completes.
+assemble_hgs_hap() (
+    local profile="$ROOT/hgs/build-profile.json5"
+    local backup
+    backup="$(mktemp)"
+    cp "$profile" "$backup"
+    trap 'cp "$backup" "$profile"; rm -f "$backup"' EXIT
+    local abi lib_root prefix abis=("$NATIVE_ARCH")
+    if [ "$NATIVE_ARCH" = all ]; then
+        abis=(arm64-v8a x86_64)
+    fi
+    for abi in "${abis[@]}"; do
+        prefix="$BUILD_DIR/host-ext/$abi/usr"
+        lib_root="$ROOT/entry/libs/$abi"
+        for soname in libwayland-server.so.0 libwayland-client.so.0 libxkbcommon.so.0; do
+            test -f "$lib_root/$soname" || err "Missing native dependency: $lib_root/$soname"
+            if [ ! -e "$prefix/lib/$soname" ]; then
+                ln -sfn "$lib_root/$soname" "$prefix/lib/$soname"
+            fi
+        done
+    done
+    local args="-DHGS_BUILD_X11=ON -DHGS_X11_DEPS_BY_ABI=$BUILD_DIR/host-ext"
+    if [ -n "${WINEHUA_HGS_XIM_SDK:-}" ]; then
+        [ "$NATIVE_ARCH" != all ] || err "Select a single ABI when using WINEHUA_HGS_XIM_SDK"
+        args+=" -DHGS_BUILD_XIM=ON -DHGS_XIM_DEPS_ROOT=$WINEHUA_HGS_XIM_SDK"
+        cp -L "$WINEHUA_HGS_XIM_SDK/lib/libxcb-imdkit.so.1" "$NATIVE_LIBS/"
+        if [ -f "$WINEHUA_HGS_XIM_SDK/lib/libxcb-util.so.1" ]; then
+            cp -L "$WINEHUA_HGS_XIM_SDK/lib/libxcb-util.so.1" "$NATIVE_LIBS/"
+        fi
+    fi
+    python3 - "$profile" "$NATIVE_ARCH" "$args" <<'HGS_PROFILE'
+import json
+import re
+import sys
+from pathlib import Path
+
+profile, abi, args = sys.argv[1:]
+path = Path(profile)
+text = path.read_text()
+text = re.sub(r'"abiFilters"\s*:\s*\[[^\]]*\]', lambda _: '"abiFilters": ' + json.dumps(["arm64-v8a", "x86_64"] if abi == "all" else [abi]), text, count=1)
+text = re.sub(r'"arguments"\s*:\s*"[^"]*"', lambda _: '"arguments": ' + json.dumps(args), text, count=1)
+path.write_text(text)
+HGS_PROFILE
+    cd "$ROOT"
+    ohpm install
+    hvigorw assembleHap
+)
+
 # ============================================================
 package_hap() {
     log "=== 打包 HAP ($NATIVE_ARCH) ==="
@@ -158,7 +207,7 @@ with open('$module_json', 'w') as f:
     fi
 
     cd "$WINEHUA"
-    hvigorw assembleHap || { err "hvigorw assembleHap 失败"; return 1; }
+    assemble_hgs_hap || { err "hvigorw assembleHap 失败"; return 1; }
 
     cd "$WINEHUA"
     python3 sign.py "$unsigned_hap" "$signed_hap"
@@ -177,11 +226,29 @@ deploy() {
     fi
 
     log "=== 部署到 $device ==="
-    # 多目标在线时裸 hdc shell 会报 "need connect-key"，所有命令必须 -t 定向
+    # 多目标在线时裸 hdc shell 会报 "need connect-key"，所有命令必须 -t 定向。
+    # 注意: hdc 客户端连不上 server / 目标时**打印 [Fail]... 但退出码仍为 0**
+    # (实测 2026-10-04: WLAN hdc 闪断, 一次 390MB 推送中途掉线, 四条命令全部
+    # 假成功, 脚本报"部署完成"而设备上还是旧包 —— 下一轮测试全在旧二进制上跑)。
+    # 所以除 rc 检查外, 关键步骤再做产物断言。
     hdc tconn "$device" || { err "hdc tconn 失败"; }
+    hdc -t "$device" list targets | grep -q "$device" || err "tconn 后目标不在列表: $device"
     hdc -t "$device" shell bm uninstall -n app.hackeris.winehua 2>/dev/null || true
-    hdc -t "$device" file send "$hap" /data/local/tmp/ || { err "hdc file send 失败"; }
-    hdc -t "$device" shell bm install -p /data/local/tmp/entry-default-signed.hap -r || { err "bm install 失败"; }
+    local install_before install_after
+    install_before=$(hdc -t "$device" shell bm dump -n app.hackeris.winehua \
+        2>/dev/null | grep -m1 updateTime | tr -dc '0-9') || true
+    hdc -t "$device" file send "$hap" /data/local/tmp/ | grep -q "FileTransfer finish" \
+        || { err "hdc file send 失败 (未见 FileTransfer finish)"; }
+    # 安装生效断言: bm install -r 对同包也会刷新 updateTime——前后时间戳"变化"
+    # 才是安装生效的正面证据; 未变 = 安装未生效 (实测假成功面), 下方检查拒绝
+    # 报成功。
+    hdc -t "$device" shell bm install -p /data/local/tmp/entry-default-signed.hap -r \
+        | grep -q "successfully" || { err "bm install 失败"; }
+    install_after=$(hdc -t "$device" shell bm dump -n app.hackeris.winehua \
+        2>/dev/null | grep -m1 updateTime | tr -dc '0-9')
+    if [ -n "$install_before" ] && [ "$install_before" = "$install_after" ]; then
+        err "bm install 后 updateTime 未变 ($install_after) —— 安装未生效, 拒绝报成功"
+    fi
 
     log "部署完成"
 }

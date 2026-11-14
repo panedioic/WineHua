@@ -6,6 +6,7 @@
 #include "graphics/graphics_broker.h"
 #include "wine/wine_constants.h"
 #include "wine/wine_env.h"
+#include "proc/broker.h"
 #include "proc/wine_process.h"
 #include "wine/wine_launch.h"
 #include "wine/wine_exe.h"
@@ -27,6 +28,7 @@
 #include <thread>
 #include <atomic>
 #include <algorithm>
+#include <cmath>
 #include <dlfcn.h>
 
 #undef LOG_TAG
@@ -37,6 +39,10 @@
 
 // -- 全局状态 (NAPI 层, 被 wine_process / wine_launch 引用) --
 napi_threadsafe_function gStateTsfn = nullptr;
+
+namespace winehua {
+bool ConfigureX11FrameProvider(bool enabled);
+}
 std::string gSockPath;
 
 // -- State 回调 -> ArkTS --
@@ -270,8 +276,8 @@ static napi_value SetHostShadowProfile(napi_env env, napi_callback_info info) {
 }
 
 static napi_value LaunchClient(napi_env env, napi_callback_info info) {
-    size_t argc = 8;
-    napi_value args[8] = {};
+    size_t argc = 10;
+    napi_value args[10] = {};
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
     auto* p = new LaunchParams();
@@ -310,6 +316,46 @@ static napi_value LaunchClient(napi_env env, napi_callback_info info) {
         napi_get_value_string_utf8(env, args[7], wineLang, sizeof(wineLang), nullptr);
         if (!strcmp(wineLang, "zh_CN") || !strcmp(wineLang, "en_US"))
             p->wineLang = wineLang;
+    }
+    if (argc >= 9) {
+        uint32_t count = 0;
+        bool valid = napi_get_array_length(env, args[8], &count) == napi_ok && count <= 6;
+        std::vector<std::string> lines;
+        for (uint32_t i = 0; valid && i < count; ++i) {
+            napi_value item;
+            size_t length = 0;
+            valid = napi_get_element(env, args[8], i, &item) == napi_ok &&
+                    napi_get_value_string_utf8(env, item, buf, sizeof(buf), &length) == napi_ok &&
+                    length < sizeof(buf) - 1;
+            if (valid) lines.emplace_back(buf, length);
+        }
+        if (!valid || !winehua::BuildWineDisplayEnvironment(lines, p->display)) {
+            delete p;
+            napi_throw_type_error(env, nullptr, "invalid HGS display environment");
+            return nullptr;
+        }
+    }
+    if (argc >= 10) {
+        napi_valuetype type = napi_undefined;
+        napi_typeof(env, args[9], &type);
+        if (type != napi_undefined) {
+            const auto dimension = [&](const char* name, int32_t& value) {
+                napi_value field;
+                double number;
+                if (napi_get_named_property(env, args[9], name, &field) != napi_ok ||
+                    napi_get_value_double(env, field, &number) != napi_ok ||
+                    !std::isfinite(number) || number < 1 || number > 32767 || number != std::floor(number))
+                    return false;
+                value = static_cast<int32_t>(number);
+                return true;
+            };
+            if (!p->display.x11 || type != napi_object ||
+                !dimension("width", p->x11DesktopWidth) || !dimension("height", p->x11DesktopHeight)) {
+                delete p;
+                napi_throw_type_error(env, nullptr, "invalid X11 desktop size");
+                return nullptr;
+            }
+        }
     }
     // 向后兼容: 旧调用未传 homeDir 时使用默认路径
     if (p->homeDir.empty()) {
@@ -424,14 +470,21 @@ static napi_value StopClient(napi_env, napi_callback_info) {
     return nullptr;
 }
 
-// -- NAPI: stopAll — 杀掉所有 Wine 进程 (含主 wineserver) + 停 Wayland server --
-static napi_value StopAll(napi_env, napi_callback_info) {
+// -- NAPI: stopAll — 结束 Wine 会话，旧调用方可继续同时停止图形服务 --
+static napi_value StopAll(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value arg;
+    bool stopGraphics = true;
+    napi_get_cb_info(env, info, &argc, &arg, nullptr, nullptr);
+    if (argc && napi_get_value_bool(env, arg, &stopGraphics) != napi_ok) {
+        napi_throw_type_error(env, nullptr, "stopGraphics must be a boolean");
+        return nullptr;
+    }
     winehua::GraphicsBroker::GetInstance().Stop();
     KillAllProcesses();
-    hgs::seam::HostSessionControl().Stop();
-    // 会话终结信号: zombie 感知等待全部死亡后发一次 state:stopped —
-    // ArkTS 重启/重置/停止编排以它为继续条件 (取代阶段1 的进程表轮询)。
-    // 放在 Wayland Stop (同步 join) 之后, 保证"完全退出"判据三项齐备才发声
+    SetBrokerDisplayEnvironment({});
+    if (stopGraphics) hgs::seam::HostSessionControl().Stop();
+    // 注册表进程退出后发 state:stopped，宿主继续自己的停止编排。
     NotifyWhenSessionDrained();
     return nullptr;
 }
@@ -503,6 +556,24 @@ static void CallJsPointerLock(napi_env env, napi_value cb, void*, void* data) {
 
 
 
+// The Wine loader may ask the broker to create the real explorer.exe in another NCP.
+static napi_value MatchX11DesktopProcess(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value args[2];
+    int32_t launcher = 0, client = 0;
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    WineProcessEntry process{};
+    const bool match = argc == 2 &&
+        napi_get_value_int32(env, args[0], &launcher) == napi_ok && launcher > 0 &&
+        napi_get_value_int32(env, args[1], &client) == napi_ok && client > 0 &&
+        QueryProcessSnapshot(client, &process) && process.running &&
+        (client == launcher || (process.requesterPid == launcher && process.exeBasename == "explorer.exe"));
+    if (match) MarkDesktopShellProcesses();
+    napi_value result;
+    napi_get_boolean(env, match, &result);
+    return result;
+}
+
 // -- NAPI: getProcessList — 返回运行中进程列表 --
 static napi_value GetProcessList(napi_env env, napi_callback_info info) {
     auto snapshot = GetProcessListSnapshot();
@@ -561,6 +632,18 @@ static napi_value KillProcess(napi_env env, napi_callback_info info) {
     return r;
 }
 
+static napi_value ConfigureX11FrameProvider(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool enabled = false;
+    const bool ok = argc == 1 && napi_get_value_bool(env, args[0], &enabled) == napi_ok &&
+        winehua::ConfigureX11FrameProvider(enabled);
+    napi_value result;
+    napi_get_boolean(env, ok, &result);
+    return result;
+}
+
 // -- 模块注册 --
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
@@ -575,6 +658,8 @@ static napi_value Init(napi_env env, napi_value exports) {
 
     napi_property_descriptor desc[] = {
         {"setHostShadowProfile", nullptr, SetHostShadowProfile, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"configureX11FrameProvider", nullptr, ConfigureX11FrameProvider, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"matchX11DesktopProcess", nullptr, MatchX11DesktopProcess, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"launchClient",   nullptr, LaunchClient,   nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopClient",     nullptr, StopClient,     nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stopAll",        nullptr, StopAll,        nullptr, nullptr, nullptr, napi_default, nullptr},

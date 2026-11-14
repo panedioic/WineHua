@@ -4,13 +4,12 @@ import hgsNapi from 'libhgs.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { inputMethod } from '@kit.IMEKit';
-import { SegmentButton, SegmentButtonOptions } from '@kit.ArkUI';
-import { WineEnvService } from '../service/WineEnvService';
+import { SegmentButton, SegmentButtonOptions, promptAction } from '@kit.ArkUI';
+import { WineDisplayProtocol, WineEnvService } from '../service/WineEnvService';
+import { X11ImeTarget } from '../service/X11ProbeWindowHost';
 import { ProcessService, ProcessInfo } from '../service/ProcessService';
 import { WineWindowManager } from '../service/WineWindowManager';
 import { DesktopModeService, MODE_VIRTUAL, MODE_FUSION } from '../service/DesktopModeService';
-// [[SMOKE]] 合并到 main-ui: 删本行与侧边栏的 <SmokeDevPanel /> 调用
-import { SmokeDevPanel } from '../smoke/SmokeDevPanel';
 
 const DOMAIN = 0x0000;
 
@@ -20,8 +19,8 @@ const DRIVE_C = '/data/storage/el2/base/files/.wine/drive_c';
 @Entry
 @Component
 struct Index {
-  @StorageLink('winehua.d3d.backend') d3dBackendText: string = 'vkd3d_limited_500k';
-  @StorageLink('winehua.d3d.preference') d3dPreferenceText: string = 'vkd3d_limited_500k';
+  @StorageLink('winehua.d3d.backend') d3dBackendText: string = 'dxvk_modern_2_6';
+  @StorageLink('winehua.d3d.preference') d3dPreferenceText: string = 'dxvk_modern_2_6';
   @StorageLink('winehua.dxvk.backend') dxvkBackendText: string = 'dxvk_legacy';
   @StorageLink('winehua.dxvk.preference') dxvkPreferenceText: string = 'auto';
   private env = WineEnvService.getInstance();
@@ -48,6 +47,7 @@ struct Index {
   @State desktopModeSel: number[] = [0];
   @State desktopMode: string = MODE_FUSION;
   @State desktopModeRestartHint: boolean = false;
+  @State displayProtocol: WineDisplayProtocol = 'wayland';
   // -- PC 虚拟桌面窗口状态 (镜像 WineWindowManager) --
   @State desktopActive: boolean = false;
   @State desktopWindowActive: boolean = false;
@@ -55,21 +55,30 @@ struct Index {
   // 图形后端互斥单选状态 (响应式, 高亮判据唯一来源)。区别于 @StorageLink
   // 文本字段: 后者由 AppStorage/PersistentStorage 恢复, 非点击驱动;
   // 直接绑 private 字段做高亮是旧实现"选中无高亮"根因 (非响应式)。
-  @State backendSel: string = 'vkd3d_limited_500k';
+  @State backendSel: string = 'dxvk_modern_2_6';
   // doRun 传参用的后端值: 与 backendSel 同步 (selectBackend 内联更新)
-  private d3dBackend: string = 'vkd3d_limited_500k';
+  private d3dBackend: string = 'dxvk_modern_2_6';
   private dxvkBackend: string = 'dxvk_legacy';
   // 升级提示日志只打一次 (master 版无弹卡 UI, 检测到不一致仅留痕 +
   // 快速操作按钮转为"应用更新"语义, 见 quickStart)
   private upgradeLogged: boolean = false;
   // -- IME 桥接 (Wine 文本框聚焦 → attach 弹软键盘 → insertText 注入 Wine) --
   private imeController: inputMethod.InputMethodController | null = null;
+  private x11ImeTarget: X11ImeTarget | null = null;
+  private imeSequence: number = 0;
 
   // 注册 C++ 侧激活回调: active=1 → attach 弹键盘, active=0 → 收起
   private setupIme(): void {
+    this.env.x11ProbeWindowHost.setImeListener((target: X11ImeTarget | null): void => {
+      const previous = this.x11ImeTarget;
+      this.x11ImeTarget = target;
+      if (target && !this.imeController) this.imeAttach();
+      else if (!target && previous) this.imeDetach();
+    });
     hgsNapi.setImeCallback((active: number, x: number, y: number, w: number, h: number) => {
       hilog.info(DOMAIN, 'IME-TEST', '[cb] active=%{public}d rect=[%{public}d,%{public}d %{public}dx%{public}d]',
         active, x, y, w, h);
+      if (this.x11ImeTarget) return;
       if (active === 1) {
         this.imeAttach();
       } else {
@@ -79,6 +88,7 @@ struct Index {
   }
 
   private imeAttach(): void {
+    const sequence = ++this.imeSequence;
     hilog.info(DOMAIN, 'IME-TEST', '[step] imeAttach begin');
     try {
       const controller = inputMethod.getController();
@@ -101,42 +111,55 @@ struct Index {
       };
       const cfg: inputMethod.TextConfig = { inputAttribute: attr };
       controller.attach(true, cfg).then(() => {
+        if (sequence !== this.imeSequence || this.imeController !== controller) return;
         hilog.info(DOMAIN, 'IME-TEST', '[attach] OK, registering on() callbacks');
         // attach 成功后注册事件 (12800009 detached 说明 on() 须在绑定后注册)
         controller.on('insertText', (text: string) => {
-          hilog.info(DOMAIN, 'IME-TEST', '[insertText] "%{public}s"', text);
-          hgsNapi.sendImeCommit(text);   // 提交文本 → Wine commit_string
+          const target = this.x11ImeTarget;
+          if (target) target.session.commitText(target.windowId, text);
+          else hgsNapi.sendImeCommit(text);
         });
         controller.on('deleteLeft', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteLeft] len=%{public}d', len);
-          hgsNapi.imeBackspace();        // 退格 → Wine KEY_BACKSPACE
+          if (this.x11ImeTarget) this.sendX11ImeKey(14, len);
+          else hgsNapi.imeBackspace();
         });
         controller.on('deleteRight', (len: number) => {
           hilog.info(DOMAIN, 'IME-TEST', '[deleteRight] len=%{public}d', len);
-          hgsNapi.imeBackspace();
+          if (this.x11ImeTarget) this.sendX11ImeKey(111, len);
+          else hgsNapi.imeBackspace();
         });
         controller.on('sendKeyboardStatus', (status: inputMethod.KeyboardStatus) => {
           hilog.info(DOMAIN, 'IME-TEST', '[keyboardStatus] %{public}d (NONE=0 HIDE=1 SHOW=2)', status);
+          // 面板被收起 (用户手动/系统) → 重新武装激活边沿: 同窗内文本框重聚焦
+          // 无 seat 级 text-input 事件, 不重新武装则合成器 activated 恒真,
+          // 此后的矩形+commit 永不重弹 (见 text_input.cpp commit 注释)
+          if (status === inputMethod.KeyboardStatus.HIDE) {
+            hgsNapi.imeRearm();
+          }
         });
         controller.on('setPreviewText', (text: string, range: inputMethod.Range) => {
-          hilog.info(DOMAIN, 'IME-TEST', '[previewText] "%{public}s" range=[%{public}d,%{public}d]', text, range.start, range.end);
-          hgsNapi.sendImePreedit(text, range.start, range.end);  // 预上屏 → Wine preedit_string
+          if (!this.x11ImeTarget) hgsNapi.sendImePreedit(text, range.start, range.end);
         });
         // 回车补齐在 WineWindow.ets onKeyEvent 统一兜底 (系统吞 KeyDown 只派
         // KeyUp 时补发 down+up, 覆盖 IME 激活/非激活所有场景), 此处只留日志
         controller.on('sendFunctionKey', (fk: inputMethod.FunctionKey) => {
+          if (this.x11ImeTarget) this.sendX11ImeKey(28, 1);
           hilog.info(DOMAIN, 'IME-TEST', '[sendFunctionKey] enterKeyType=%{public}d (0 UNSPEC 6 DONE 8 NEWLINE)',
             fk.enterKeyType);
         });
       }).catch((err: BusinessError) => {
+        if (sequence === this.imeSequence) this.imeController = null;
         hilog.error(DOMAIN, 'IME-TEST', '[attach] FAILED code=%{public}d msg=%{public}s', err.code, err.message);
       });
     } catch (e) {
+      if (sequence === this.imeSequence) this.imeController = null;
       hilog.error(DOMAIN, 'IME-TEST', '[step] EXCEPTION: %{public}s', JSON.stringify(e));
     }
   }
 
   private imeDetach(): void {
+    ++this.imeSequence;
     hilog.info(DOMAIN, 'IME-TEST', '[step] imeDetach');
     const c = this.imeController;
     if (c) {
@@ -149,10 +172,20 @@ struct Index {
         c.off('sendFunctionKey');
         c.hideTextInput();
         c.detach();
+        hgsNapi.imeRearm();  // 面板随 detach 收起 → 重新武装激活边沿 (同 HIDE 分支)
       } catch (e) {
         hilog.error(DOMAIN, 'IME-TEST', '[detach] EXCEPTION: %{public}s', JSON.stringify(e));
       }
       this.imeController = null;
+    }
+  }
+
+  private sendX11ImeKey(evdevCode: number, count: number): void {
+    const target = this.x11ImeTarget;
+    if (!target) return;
+    for (let i = 0; i < Math.min(32, count); ++i) {
+      if (!target.session.sendInput(target.windowId, { kind: 'key', evdevCode: evdevCode, pressed: true })) break;
+      target.session.sendInput(target.windowId, { kind: 'key', evdevCode: evdevCode, pressed: false });
     }
   }
 
@@ -167,6 +200,7 @@ struct Index {
     const env = this.env;
     const mirror = (): void => {
       this.state = env.engineState;
+      this.displayProtocol = env.getDisplayProtocol();
       this.sessionAlive = env.sessionAlive;
       // prefixReady 跳变驱动文件区: 1.0.5 靠 refreshPrefix/waitForPrefix 在
       // 就绪时 listDir, engine service 化后该联动丢失 (回归) — 就绪瞬间
@@ -266,6 +300,16 @@ struct Index {
     this.desktopModeRestartHint = true;
   }
 
+  private selectDisplayProtocol(protocol: WineDisplayProtocol): void {
+    if (this.displayProtocol === protocol) return;
+    if (this.env.isBusy()) {
+      promptAction.showToast({ message: '引擎操作进行中，请稍后再试' });
+      return;
+    }
+    this.env.setDisplayPreference(protocol);
+    this.env.restartEngine();
+  }
+
   // 设置项可见性: Pad/PC 可切 (phone 恒虚拟桌面, 无多窗口模式可切)
   private isPcDevice(): boolean {
     const t = deviceInfo.deviceType;
@@ -297,7 +341,12 @@ struct Index {
         value: '重置',
         fontColor: '#ff5555',
         action: () => {
-          this.env.doReset();
+          // F2 (复核): doReset 忙时静默 return false (防重入) —— 用户视角是
+          // 「点了没反应」。给可感知的拒绝反馈, 不排队重试 (忙态是瞬态,
+          // 是否重来由用户决定)。
+          if (!this.env.doReset()) {
+            promptAction.showToast({ message: '引擎操作进行中，请稍后再试' });
+          }
         }
       }
     });
@@ -417,6 +466,9 @@ struct Index {
       // ============================================================
       //  侧边栏
       // ============================================================
+      // 设置区滚动容器 (2026-10-11 用户要求: 累计内容超出屏高, 需上下滑动)。
+      // 内层内容缩进保留原层级, 不做纯缩进的整段重排。
+      Scroll() {
       Column() {
         // -- Wine 环境状态 --
         Text('Wine 环境')
@@ -466,6 +518,25 @@ struct Index {
           Text(`混合路由: D3D12 → VKD3D; D3D11/DXGI → ${this.dxvkBackendText === 'dxvk_modern_2_6' ? 'DXVK 2.6.2' : 'DXVK 1.10.3'}; x64 D3D12, 500K descriptor。`)
             .fontSize(11).fontColor('#d9a').maxLines(3)
             .width('100%').margin({ bottom: 6 })
+        }
+
+        if (this.env.supportsX11() || this.displayProtocol === 'x11') {
+          Divider().color('#2a2a2a').width('100%')
+          Text('Wine 显示协议')
+            .fontWeight(FontWeight.Bold).fontColor('#999')
+            .width('100%').padding({ top: 12, bottom: 8 })
+          Row({ space: 4 }) {
+            Button('Wayland')
+              .layoutWeight(1).height(34)
+              .backgroundColor(this.displayProtocol === 'wayland' ? '#285' : '#333')
+              .onClick(() => this.selectDisplayProtocol('wayland'))
+            Button('X11')
+              .layoutWeight(1).height(34)
+              .backgroundColor(this.displayProtocol === 'x11' ? '#285' : '#333')
+              .enabled(this.env.supportsX11())
+              .onClick(() => this.selectDisplayProtocol('x11'))
+          }.width('100%')
+
         }
 
         // -- 桌面模式 (Pad/PC): 多窗口模式 = 每个程序独立 OHOS 窗口 (可拖动/
@@ -543,11 +614,6 @@ struct Index {
 
         Divider().color('#2a2a2a').width('100%')
 
-        // [[SMOKE]] 合并到 main-ui: 删本行 (开发测试区组件)
-        SmokeDevPanel()
-
-        Divider().color('#2a2a2a').width('100%')
-
         // -- 运行中进程 --
         Row() {
           Text('运行中进程')
@@ -589,7 +655,9 @@ struct Index {
               .backgroundColor('#1e1e1e')
             })
           }
-          .width('100%').layoutWeight(1)
+          .width('100%')
+          // 进程列表限高 (Scroll 内 layoutWeight 失效): 最多 8 行, 超出内部滚动
+          .height(Math.min(this.processList.length, 8) * 44)
           .margin({ left: -14, right: -14 })
           .scrollBar(BarState.Off)
         } else {
@@ -598,9 +666,13 @@ struct Index {
             .width('100%').padding({ top: 8 })
         }
       }
+      .width('100%')
+      .constraintSize({ minHeight: '100%' }) // 内容矮于视口时撑满顶对齐 (Scroll 默认居中)
+      }
       .width(300).height('100%')
       .backgroundColor('#141414')
       .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+      .scrollBar(BarState.Auto)
 
       // -- 侧边栏分隔线 --
       Divider().vertical(true).color('#2a2a2a').height('100%')
