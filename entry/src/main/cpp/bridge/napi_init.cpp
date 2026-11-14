@@ -470,15 +470,21 @@ static napi_value StopClient(napi_env, napi_callback_info) {
     return nullptr;
 }
 
-// -- NAPI: stopAll — 杀掉所有 Wine 进程 (含主 wineserver) + 停 Wayland server --
-static napi_value StopAll(napi_env, napi_callback_info) {
+// -- NAPI: stopAll — 结束 Wine 会话，旧调用方可继续同时停止图形服务 --
+static napi_value StopAll(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value arg;
+    bool stopGraphics = true;
+    napi_get_cb_info(env, info, &argc, &arg, nullptr, nullptr);
+    if (argc && napi_get_value_bool(env, arg, &stopGraphics) != napi_ok) {
+        napi_throw_type_error(env, nullptr, "stopGraphics must be a boolean");
+        return nullptr;
+    }
     winehua::GraphicsBroker::GetInstance().Stop();
     KillAllProcesses();
     SetBrokerDisplayEnvironment({});
-    hgs::seam::HostSessionControl().Stop();
-    // 会话终结信号: zombie 感知等待全部死亡后发一次 state:stopped —
-    // ArkTS 重启/重置/停止编排以它为继续条件 (取代阶段1 的进程表轮询)。
-    // 放在 Wayland Stop (同步 join) 之后, 保证"完全退出"判据三项齐备才发声
+    if (stopGraphics) hgs::seam::HostSessionControl().Stop();
+    // 注册表进程退出后发 state:stopped，宿主继续自己的停止编排。
     NotifyWhenSessionDrained();
     return nullptr;
 }

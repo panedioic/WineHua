@@ -76,8 +76,12 @@ export default class EntryAbility extends UIAbility {
     if (parameters && parameters['winehua.autoStart'] === '1') {
       WineEnvService.getInstance().autoStartPending = true;
     }
-    if (parameters && parameters['winehua.hgsX11Probe'] !== undefined) {
-      WineEnvService.getInstance().hgsX11Probe = parameters['winehua.hgsX11Probe'] === '1';
+    const protocol = value('winehua.displayProtocol', '');
+    if (protocol === 'x11' || protocol === 'wayland') {
+      WineEnvService.getInstance().setDisplayOverride(protocol);
+    } else if (parameters && parameters['winehua.hgsX11Probe'] !== undefined) {
+      // 旧自动化入口仍可复用同一显示协议设置。
+      WineEnvService.getInstance().setDisplayOverride(parameters['winehua.hgsX11Probe'] === '1' ? 'x11' : 'wayland');
     }
     // winehua.program=<wine 路径> → 引擎就绪后自动启动该程序
     if (parameters && parameters['winehua.program'] !== undefined &&

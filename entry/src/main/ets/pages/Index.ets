@@ -5,7 +5,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { inputMethod } from '@kit.IMEKit';
 import { SegmentButton, SegmentButtonOptions } from '@kit.ArkUI';
-import { WineEnvService } from '../service/WineEnvService';
+import { WineDisplayProtocol, WineEnvService } from '../service/WineEnvService';
 import { X11ImeTarget } from '../service/X11ProbeWindowHost';
 import { ProcessService, ProcessInfo } from '../service/ProcessService';
 import { WineWindowManager } from '../service/WineWindowManager';
@@ -49,6 +49,8 @@ struct Index {
   @State desktopModeSel: number[] = [0];
   @State desktopMode: string = MODE_FUSION;
   @State desktopModeRestartHint: boolean = false;
+  @State displayProtocol: WineDisplayProtocol = 'wayland';
+  @State displayProtocolRestartHint: boolean = false;
   // -- PC 虚拟桌面窗口状态 (镜像 WineWindowManager) --
   @State desktopActive: boolean = false;
   @State desktopWindowActive: boolean = false;
@@ -194,6 +196,7 @@ struct Index {
     const env = this.env;
     const mirror = (): void => {
       this.state = env.engineState;
+      this.displayProtocol = env.getDisplayProtocol();
       this.sessionAlive = env.sessionAlive;
       // prefixReady 跳变驱动文件区: 1.0.5 靠 refreshPrefix/waitForPrefix 在
       // 就绪时 listDir, engine service 化后该联动丢失 (回归) — 就绪瞬间
@@ -291,6 +294,12 @@ struct Index {
     DesktopModeService.getInstance().setMode(mode);
     this.desktopMode = mode;
     this.desktopModeRestartHint = true;
+  }
+
+  private selectDisplayProtocol(protocol: WineDisplayProtocol): void {
+    if (this.displayProtocol === protocol) return;
+    this.env.setDisplayPreference(protocol);
+    this.displayProtocolRestartHint = true;
   }
 
   // 设置项可见性: Pad/PC 可切 (phone 恒虚拟桌面, 无多窗口模式可切)
@@ -493,6 +502,29 @@ struct Index {
           Text(`混合路由: D3D12 → VKD3D; D3D11/DXGI → ${this.dxvkBackendText === 'dxvk_modern_2_6' ? 'DXVK 2.6.2' : 'DXVK 1.10.3'}; x64 D3D12, 500K descriptor。`)
             .fontSize(11).fontColor('#d9a').maxLines(3)
             .width('100%').margin({ bottom: 6 })
+        }
+
+        if (this.env.supportsX11() || this.displayProtocol === 'x11') {
+          Divider().color('#2a2a2a').width('100%')
+          Text('Wine 显示协议')
+            .fontWeight(FontWeight.Bold).fontColor('#999')
+            .width('100%').padding({ top: 12, bottom: 8 })
+          Row({ space: 4 }) {
+            Button('Wayland')
+              .layoutWeight(1).height(34)
+              .backgroundColor(this.displayProtocol === 'wayland' ? '#285' : '#333')
+              .onClick(() => this.selectDisplayProtocol('wayland'))
+            Button('X11')
+              .layoutWeight(1).height(34)
+              .backgroundColor(this.displayProtocol === 'x11' ? '#285' : '#333')
+              .enabled(this.env.supportsX11())
+              .onClick(() => this.selectDisplayProtocol('x11'))
+          }.width('100%')
+          if (this.displayProtocolRestartHint) {
+            Text('重启 Wine 引擎后使用所选协议')
+              .fontSize(12).fontColor('#f84')
+              .width('100%').padding({ top: 4 })
+          }
         }
 
         // -- 桌面模式 (Pad/PC): 多窗口模式 = 每个程序独立 OHOS 窗口 (可拖动/

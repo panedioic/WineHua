@@ -6,7 +6,7 @@ export const launchClient: (exePath: string, argv: string[], sockPath: string, l
   homeDir: string, d3dBackend?: string, dxvkBackend?: string, wineLang?: string, displayEnvironment?: string[],
   x11DesktopSize?: WineX11DesktopSize) => number;
 export const stopClient: () => void;
-export const stopAll: () => void;
+export const stopAll: (stopGraphics?: boolean) => void;
 export const setStateCallback: (cb: (state: string) => void) => void;
 export const runWineExe: (binDir: string, sockPath: string, libPath: string, exePath: string, homeDir: string) => void;
 export interface WineProgramOptions {

@@ -102,9 +102,11 @@ export function removePathRecursive(path: string): void {
 // (sessionAlive = 桌面 root || 进程在跑), UI 的状态文案与按钮使能全部以此为准;
 // native evt:* 瞬时事件经 subscribeEvents 转发 (ProcessService/启动反馈),
 // 事件除 desktop-ready 补票升级 ready-degraded 外永不迁移状态机。
+export type WineDisplayProtocol = 'wayland' | 'x11';
+
 export class WineEnvService {
-  // Opt-in for the X11 integration test. The product UI still uses Wayland.
-  hgsX11Probe: boolean = false;
+  private displayPreference: WineDisplayProtocol = 'wayland';
+  private displayOverride: WineDisplayProtocol | undefined = undefined;
   readonly x11ProbeWindowHost: X11ProbeWindowHost = new X11ProbeWindowHost();
   private x11DesktopSession: boolean = false;
 
@@ -119,9 +121,9 @@ export class WineEnvService {
     }
   };
 
-  private async prepareX11Probe(ctx: common.Context): Promise<HgsX11Options> {
+  private async prepareX11Resources(ctx: common.Context): Promise<HgsX11Options> {
     const dir = ctx.filesDir + '/hgs-p3-x11';
-    if (!ensureDirectory(dir)) throw new Error('无法创建 X11 测试资源目录');
+    if (!ensureDirectory(dir)) throw new Error('无法创建 X11 资源目录');
     const archive = dir + '/hgs-x11-res.zip';
     const data = ctx.resourceManager.getRawFileContentSync('hgs-x11-res.zip');
     const file = fs.openSync(archive, fs.OpenMode.CREATE | fs.OpenMode.TRUNC | fs.OpenMode.WRITE_ONLY);
@@ -306,6 +308,31 @@ export class WineEnvService {
   }
   getWineLang(): string { return this.wineLang; }
 
+  getDisplayProtocol(): WineDisplayProtocol {
+    return this.displayOverride ?? this.displayPreference;
+  }
+
+  supportsX11(): boolean {
+    return HgsService.create().inspect().capabilities.x11;
+  }
+
+  setDisplayOverride(protocol: WineDisplayProtocol): void {
+    this.displayOverride = protocol;
+    this.notify();
+  }
+
+  setDisplayPreference(protocol: WineDisplayProtocol): void {
+    this.displayPreference = protocol;
+    this.displayOverride = undefined;
+    try {
+      this.settingsStore?.putSync('display_protocol', protocol);
+      this.settingsStore?.flush();
+    } catch (error) {
+      hilog.error(DOMAIN, 'wine', '显示协议偏好保存失败: %{public}s', String(error));
+    }
+    this.notify();
+  }
+
   // 设置页"Wine 语言"切换: 持久化 (preferences API, putSync+flush 直写磁盘)。
   // 仅写入配置 — 已在运行的 Wine 进程不受影响, 重启引擎后生效 (UI 负责提示)
   setWineLangPreference(lang: string): void {
@@ -384,6 +411,8 @@ export class WineEnvService {
       this.settingsStore = preferences.getPreferencesSync(ctx, { name: 'wine_settings' });
       const savedLang = this.settingsStore.getSync('lang', 'zh_CN') as string;
       this.wineLang = savedLang === 'en_US' ? 'en_US' : 'zh_CN';
+      this.displayPreference = this.settingsStore.getSync('display_protocol', 'wayland') === 'x11' ?
+        'x11' : 'wayland';
       this.skippedUpgradeSha = this.settingsStore.getSync('skipped_upgrade_sha', '') as string;
     } catch (e) {
       hilog.error(DOMAIN, 'wine', 'lang settings load fail: %{public}s', JSON.stringify(e));
@@ -510,12 +539,12 @@ export class WineEnvService {
     } else if (name == 'stopping') {
       this.engineState = 'stopping';
     } else if (name == 'stopped') {
-      // native 停止编排完成 (注册表进程全死 zombie 感知 + wineserver 死 +
-      // Wayland 停)。注意不在此清 opBusy: 重启/重置编排还有后续动作
-      // (startSession/删 prefix), 由各编排自己在完成时清
-      this.engineState = 'idle';
-      this.engineStage = '';
       const waiters = this.stopWaiters.splice(0);
+      // 主动停止由 stopSession 等待 Wine 和 HGS 两边都结束后进入 idle。
+      if (waiters.length === 0) {
+        this.engineState = 'idle';
+        this.engineStage = '';
+      }
       for (const resolve of waiters) {
         resolve();
       }
@@ -963,7 +992,8 @@ export class WineEnvService {
     // 判定, 重启引擎会沿用旧模式 (改融合后桌面窗口依旧出现)
     WineWindowManager.getInstance().applyModePolicy();
     testNapi.setHostShadowProfile(this.perfProfile);
-    const x11 = this.hgsX11Probe;
+    const protocol = this.getDisplayProtocol();
+    const x11 = protocol === 'x11';
     if (!testNapi.configureX11FrameProvider(x11) && x11) {
       hilog.warn(DOMAIN, 'wine', 'HGS X11 external frame provider unavailable');
     }
@@ -977,7 +1007,7 @@ export class WineEnvService {
       if (x11) {
         const options: HgsServiceOptions = {
           protocols: 'x11', runtimeDir: this.ctx.filesDir + '/hgs-p3-runtime',
-          composition: 'per-window', x11: await this.prepareX11Probe(this.ctx)
+          composition: 'per-window', x11: await this.prepareX11Resources(this.ctx)
         };
         if (this.x11DesktopSession) {
           const screen = display.getDefaultDisplaySync();
@@ -1003,7 +1033,7 @@ export class WineEnvService {
         });
       }
       started = true;
-      const environment = graphics.clientEnvironment(x11 ? 'x11' : 'wayland');
+      const environment = graphics.clientEnvironment(protocol);
       if (environment.inheritedFds.length > 0) {
         throw new Error('Wine 进程 broker 不支持此显示端点的继承 fd');
       }
@@ -1030,8 +1060,7 @@ export class WineEnvService {
     }
   }
 
-  // 停止会话原语: 编排 stopAll 并等 native state:stopped (注册表进程全死
-  // zombie 感知 + wineserver 死 + Wayland 停)。无条件执行: 即使无用户会话,
+  // 停止会话原语: 分别等待 Wine 进程退出与 HGS 停止。无条件执行: 即使无用户会话,
   // 主 wineserver 仍在注册表里, 不杀它就走"热重连"(新 wineserver 连旧实例
   // 后退出, 旧实例内存态不重置) — 重启语义必须对用户可见可预期。注册表全空时
   // state:stopped 立即发出, 空转代价可忽略。showOverlay=false 供"停止全部"
@@ -1050,12 +1079,14 @@ export class WineEnvService {
     } else {
       this.notify();
     }
+    const drained = this.waitForEngineStopped(35000);
     try {
-      testNapi.stopAll();
+      testNapi.stopAll(false);
     } catch (e) {
       hilog.error(DOMAIN, 'wine', 'stopSession stopAll error: %{public}s', JSON.stringify(e));
     }
-    await this.waitForEngineStopped(35000);
+    await HgsService.create().stop();
+    await drained;
     this.x11ProbeWindowHost.stop();
     this.x11DesktopSession = false;
     this.engineState = 'idle';
